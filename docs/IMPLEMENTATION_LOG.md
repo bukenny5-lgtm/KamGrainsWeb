@@ -16,6 +16,29 @@
 - Confirmed migration state, GET contract, unauthorized/authorized PATCH behavior, partial update behavior, protected-field rejection, empty-value validation, fallback values, and cleanup restoration.
 - Temporary validation scripts were removed. Production was not touched.
 - **Phase 1 status:** RUNTIME VALIDATION PASSED — UI SMOKE TEST PENDING
+
+## 2026-09-18 — Phase 2 Product Model Inspection
+
+- Inspected the real development PostgreSQL schema, constraints, indexes, foreign keys, migrations, backend routes/services, frontend consumers, and reporting dependencies.
+- Confirmed one primary `inv.product` table and one simple `inv.uom` table; no conversion model exists.
+- Recorded the additive, backward-compatible product-foundation recommendation in `docs/PHASE2_PRODUCT_MODEL_INSPECTION.md`.
+- Recorded the future 80 mm thermal POS receipt requirement in ADR-0011.
+- **Status:** Inspection complete; no schema, migration, workflow, deployment, or commit performed.
+
+## 2026-09-18 — Phase 2 Minimal Universal Product Foundation
+
+- **Migration:** Created `database/migrations/phase_12_universal_product_model.sql` with additive `inv.product_category` and nullable/defaulted product metadata fields.
+- **Backend:** Extended existing product CRUD responses and added `/api/product-categories` CRUD using existing setup permissions.
+- **Frontend:** Extended product contracts/API functions and Setup product administration with description, category, purchasable, and stock-item fields.
+- **Runtime validation:** Real Express + development PostgreSQL integration suite passed, including cleanup and compatibility endpoint checks.
+- **Static validation:** Frontend TypeScript/build, backend build, and `git diff --check` passed.
+- **Status:** Implementation complete; runtime/UI approval required before commit. No deployment or commit performed.
+
+## 2026-09-18 — Phase 2 UI Regression Fix
+
+- Diagnosed React error #185 as an unstable business-profile object identity feeding the Setup profile synchronization effect.
+- Applied the smallest correction by memoizing the merged profile in `useBusinessProfile()`.
+- Static validation passed. Browser UI smoke validation remains pending because the local browser automation tab could not attach.
 ## 2026-09-17 â€” Phase 0 Documentation Baseline
 
 - **Phase:** Phase 0 â€” Platform Transformation Baseline

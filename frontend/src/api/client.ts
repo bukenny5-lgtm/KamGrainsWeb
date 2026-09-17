@@ -46,6 +46,7 @@ import type {
   CreateArPaymentPayload,
   BusinessProfileResponse,
   UpdateBusinessProfilePayload,
+  ProductCategoryResponse,
 
 } from "@/types/api";
 
@@ -251,6 +252,26 @@ export async function deleteUom(uomCode: string) {
 
 export async function getProducts() {
   const response = await api.get("/products");
+  return response.data;
+}
+
+export async function getProductCategories(): Promise<ProductCategoryResponse> {
+  const response = await api.get("/product-categories");
+  return response.data;
+}
+
+export async function createProductCategory(payload: ApiPayload) {
+  const response = await api.post("/product-categories", payload);
+  return response.data;
+}
+
+export async function updateProductCategory(categoryId: string, payload: ApiPayload) {
+  const response = await api.patch(`/product-categories/${encode(categoryId)}`, payload);
+  return response.data;
+}
+
+export async function deleteProductCategory(categoryId: string) {
+  const response = await api.delete(`/product-categories/${encode(categoryId)}`);
   return response.data;
 }
 

@@ -1,5 +1,41 @@
 export type ApiPayload = unknown;
 
+export type Product = {
+  product_id: string;
+  sku: string;
+  product_name: string;
+  description?: string | null;
+  product_type: string;
+  uom_code: string;
+  track_lots: boolean;
+  track_expiry: boolean;
+  shelf_life_days?: number | null;
+  is_active: boolean;
+  lot_prefix?: string | null;
+  is_saleable: boolean;
+  is_purchasable: boolean;
+  is_stock_item: boolean;
+  bottle_volume_l?: number | string | null;
+  pieces_per_carton?: number | string | null;
+  pack_size_qty?: number | string | null;
+  pack_size_uom_code?: string | null;
+  category_id?: string | null;
+  category_code?: string | null;
+  category_name?: string | null;
+};
+
+export type ProductCategory = {
+  category_id: string;
+  category_code: string;
+  category_name: string;
+  description?: string | null;
+  is_active: boolean;
+  created_at?: string;
+};
+
+export type ProductCategoryResponse = ApiListResponse<ProductCategory, "categories">;
+export type ProductUpdatePayload = Partial<Omit<Product, "product_id" | "category_code" | "category_name">> & Pick<Product, "sku" | "product_name" | "product_type" | "uom_code">;
+
 export type BusinessProfile = {
   company_id: string | null;
   company_name: string;

@@ -58,3 +58,25 @@ Before Phase 1 begins, confirm baseline build commands and preserve repeatable c
 - **Static validation:** Frontend TypeScript PASS; frontend build PASS; backend build PASS; `git diff --check` PASS.
 - **Status:** RUNTIME VALIDATION PASSED — UI SMOKE TEST PENDING
 
+## Phase 2 Runtime Validation — 2026-09-18
+
+- **Database:** Development `kam_grains_db`; migration applied idempotently for validation only. Production untouched.
+- **Existing product:** PASS — GET returned HTTP 200 and preserved product ID.
+- **Category CRUD:** PASS — create 201, patch 200, list 200.
+- **Product CRUD:** PASS — full create 201, PATCH 200, create without optional fields 201 with safe defaults.
+- **Nullable category:** PASS — category assignment and clearing to NULL.
+- **Validation:** PASS — invalid category 400, invalid boolean 400, duplicate SKU 409, missing required field 400.
+- **Foreign-key protection:** PASS — deleting an assigned category returned 409.
+- **Compatibility:** PASS — sales orders, deliveries, purchase orders, goods receipts, inventory stock-on-hand, cleaning batches, and all product-related report endpoints returned HTTP 200.
+- **Cleanup:** PASS — zero `PH2TEST_` products, zero `PH2_` categories, one active company profile; product IDs and lot relationships unchanged.
+- **Status:** RUNTIME VALIDATION PASSED — UI SMOKE TEST PENDING
+
+## Phase 2 UI Regression Fix — 2026-09-18
+
+- **Regression:** React error #185 on Setup after Phase 2 frontend deployment.
+- **Root cause:** Unstable merged profile object caused the Setup profile synchronization effect to call `setProfileForm` continuously.
+- **Correction:** Memoized the merged profile result in `useBusinessProfile()`.
+- **Static validation:** Frontend TypeScript PASS; frontend build PASS; backend build PASS; `git diff --check` PASS.
+- **Browser validation:** BLOCKED — local browser automation could not attach/navigate to the Vite tab. Required Setup smoke cases remain NOT RUN.
+- **Status:** RUNTIME FIX APPLIED — UI SMOKE TEST PENDING
+

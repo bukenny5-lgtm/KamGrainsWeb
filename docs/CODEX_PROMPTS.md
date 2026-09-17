@@ -35,3 +35,10 @@ Each significant prompt record should include:
 - Record whether the result was accepted, modified, rejected, or pending review.
 - Do not include secrets, credentials, tokens, or private configuration values.
 - Link prompt results to implementation and deployment records where applicable.
+
+## 2026-09-18 — Phase 2 / Minimal Universal Product Foundation
+
+- **Objective:** Add only description, purchasable, stock-item, and normalized product-category support while preserving existing workflows.
+- **Result:** Implemented and runtime-validated against the development database and real Express routes.
+- **Files Changed:** Phase 2 migration, product/category backend routes, frontend product contracts/API/Setup, and documentation.
+- **Status:** Runtime validation passed; UI smoke test pending; no deployment or commit.

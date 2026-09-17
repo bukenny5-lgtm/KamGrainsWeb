@@ -110,6 +110,24 @@ Each error entry should include:
 - **Status:** VERIFIED
 - **Related Commit:** UNKNOWN
 
+## ERR-006 — Phase 2 Setup React Render Loop
+
+- **Date:** 2026-09-18
+- **Module:** Phase 2 Product Setup / Business Profile
+- **Environment:** Deployed frontend production bundle / local source reproduction analysis
+- **Exact Error:** Minified React error #185, consistent with an excessive repeating state-update render cycle.
+- **Reproduction Steps:** Open the Setup page after the Phase 2 frontend deployment while the business-profile query is active.
+- **Impact:** Setup could fail to render in the production browser; product/category administration was unavailable. Transaction data and backend/API behavior were unaffected.
+- **Root Cause:** `useBusinessProfile()` returned a newly spread fallback/merged profile object on every render. `Setup.tsx` copied that object into `profileForm` in an effect dependent on `businessProfile`, so the dependency identity changed after every state update and the effect continuously called `setProfileForm`.
+- **Fix:** Memoized the merged profile object in `frontend/src/lib/businessProfile.ts` with `useMemo`, keyed by the query result. No Phase 2 fields, API contract, database schema, or transaction logic were removed or changed.
+- **Files Changed:** `frontend/src/lib/businessProfile.ts`, `docs/ERROR_LOG.md`, `docs/TEST_LOG.md`, `docs/IMPLEMENTATION_LOG.md`, `docs/CURRENT_STATUS.md`.
+- **Database Objects Changed:** None.
+- **Migration:** None.
+- **Regression Risk:** Low; the correction stabilizes object identity while preserving fallback and query behavior.
+- **Validation:** Frontend TypeScript PASS, frontend build PASS, backend build PASS, `git diff --check` PASS. Browser automation could not attach to the local Vite tab; UI smoke validation remains pending.
+- **Status:** FIXED — UI VALIDATION PENDING
+- **Related Commit:** NONE
+
 ## Logging Rules
 
 - Record exact errors without exposing secrets.

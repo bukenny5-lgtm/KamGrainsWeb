@@ -90,6 +90,15 @@
 - **Alternatives Considered:** Desktop-first native application.
 - **Related Phase:** Phase 12
 
+## ADR-0011 — Future POS Receipt Uses 80 mm Thermal Formatting
+- **Date:** 2026-09-18
+- **Status:** Accepted Future Requirement
+- **Context:** POS receipts serve a different operational purpose from existing A4 invoices.
+- **Decision:** Future POS receipts will target 80 mm thermal printers by default; optional 58 mm support may be considered through printer profiles.
+- **Consequences:** POS receipt rendering must be a dedicated thermal layout and must not reuse the existing A4 invoice layout.
+- **Scope:** Documentation/design only; no POS or receipt-format implementation in Phase 2.
+- **Related Phase:** Phase 2 inspection, future POS phase.
+
 ## ADR Logging Rules
 - Assign stable ADR identifiers.
 - Record context and decision separately.

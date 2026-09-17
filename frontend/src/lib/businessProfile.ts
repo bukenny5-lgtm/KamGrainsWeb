@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getBusinessProfile } from "@/api/client";
 import type { BusinessProfile } from "@/types/api";
@@ -22,8 +23,10 @@ export function useBusinessProfile() {
     select: (response) => response.data,
   });
 
+  const profile = useMemo(() => query.data ? { ...BUSINESS_PROFILE_FALLBACK, ...query.data } : BUSINESS_PROFILE_FALLBACK, [query.data]);
+
   return {
     ...query,
-    data: query.data ? { ...BUSINESS_PROFILE_FALLBACK, ...query.data } : BUSINESS_PROFILE_FALLBACK,
+    data: profile,
   };
 }

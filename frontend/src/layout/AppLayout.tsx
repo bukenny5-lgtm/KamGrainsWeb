@@ -26,6 +26,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import { ROLE_GROUPS, roleList } from "@/lib/permissions";
+import { useBusinessProfile } from "@/lib/businessProfile";
 
 const navItems = [
   {
@@ -231,6 +232,7 @@ function getPageSubtitle(pathname: string) {
 
 export default function AppLayout() {
   const { user, logout, hasRole } = useAuth();
+  const { data: businessProfile } = useBusinessProfile();
   const location = useLocation();
 
   const visibleNavItems = navItems.filter((item) => hasRole(item.roles));
@@ -238,8 +240,8 @@ export default function AppLayout() {
   const pageSubtitle = getPageSubtitle(location.pathname);
 
   useEffect(() => {
-    document.title = `${pageTitle} - KAM GRAINS`;
-  }, [pageTitle]);
+    document.title = `${pageTitle} - ${businessProfile.business_name}`;
+  }, [businessProfile.business_name, pageTitle]);
 
   function handleLogout() {
     const confirmed = window.confirm("Are you sure you want to logout?");
@@ -255,7 +257,7 @@ export default function AppLayout() {
         <div className="flex h-20 shrink-0 items-center border-b px-6">
           <div>
             <h1 className="text-xl font-bold tracking-tight text-slate-900">
-              KAM GRAINS
+              {businessProfile.business_name}
             </h1>
             <p className="text-xs text-slate-500">
               Integrated Business System
@@ -301,7 +303,7 @@ export default function AppLayout() {
             <h2 className="text-lg font-semibold text-slate-900">
               {pageTitle}
             </h2>
-            <p className="text-sm text-slate-500">{pageSubtitle}</p>
+            <p className="text-sm text-slate-500">{pageSubtitle.replaceAll("KAM GRAINS SUPPLIES", businessProfile.company_name)}</p>
           </div>
 
           <div className="flex items-center gap-3">

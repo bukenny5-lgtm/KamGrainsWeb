@@ -1,5 +1,21 @@
 ﻿# Implementation Log
 
+## 2026-09-18 — Phase 1 Universal Business Configuration / Branding
+
+- **Status:** Implemented; runtime/API/UI and database validation remain required before approval.
+- **Files inspected:** Existing server/routes/middleware, frontend API/types/auth/layout/login/Setup, print pages, migration directory, and Phase 0 documentation.
+- **Files changed:** `database/migrations/phase_11_business_profile.sql`, `backend/src/routes/businessProfile.routes.js`, `backend/src/server.js`, business-profile frontend API/types/hook, shell/login/Setup, print branding references, and Phase 1 documentation.
+- **Database change:** Added `timezone text NOT NULL DEFAULT 'Africa/Kampala'` only when absent; normalized the existing active KAM GRAINS profile to `KAM GRAINS SUPPLIES` / `KAM GRAINS`.
+- **Authorization:** PATCH uses existing authenticated `EDIT_SETUP` permission; GET is fallback-safe for login branding.
+- **Validation:** Frontend TypeScript, frontend production build, backend build, and `git diff --check` passed after the final correction. No deployment or service restart performed.
+
+### Automated Runtime Validation — 2026-09-18
+
+- Exercised the actual Express route over HTTP against the real development PostgreSQL database `kam_grains_db`.
+- Exercised the existing JWT authentication middleware and `EDIT_SETUP` permission middleware.
+- Confirmed migration state, GET contract, unauthorized/authorized PATCH behavior, partial update behavior, protected-field rejection, empty-value validation, fallback values, and cleanup restoration.
+- Temporary validation scripts were removed. Production was not touched.
+- **Phase 1 status:** RUNTIME VALIDATION PASSED — UI SMOKE TEST PENDING
 ## 2026-09-17 â€” Phase 0 Documentation Baseline
 
 - **Phase:** Phase 0 â€” Platform Transformation Baseline

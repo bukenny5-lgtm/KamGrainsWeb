@@ -31,6 +31,7 @@ import { downloadXlsx } from "@/lib/excelExport";
 
 import Can from "@/components/Can";
 import { ACTION_ROLES } from "@/lib/permissions";
+import { BUSINESS_PROFILE_FALLBACK } from "@/lib/businessProfile";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -317,9 +318,9 @@ function buildCustomerInvoiceHtml(
         <div class="doc">
           <div class="top">
             <div>
-              <h1>KAM GRAINS</h1>
+              <h1>${BUSINESS_PROFILE_FALLBACK.business_name}</h1>
               <p class="subtitle">Supplies Management System</p>
-              <p class="subtitle">Customer invoice generated from KAM GRAINS system</p>
+              <p class="subtitle">Customer invoice generated from ${BUSINESS_PROFILE_FALLBACK.business_name} system</p>
             </div>
             <div class="invoice-title">
               <h2>CUSTOMER INVOICE</h2>

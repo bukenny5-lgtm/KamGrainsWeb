@@ -32,6 +32,7 @@ import { downloadXlsx } from "@/lib/excelExport";
 
 import Can from "@/components/Can";
 import { ACTION_ROLES } from "@/lib/permissions";
+import { BUSINESS_PROFILE_FALLBACK } from "@/lib/businessProfile";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -302,7 +303,7 @@ function buildReceiptHtml(
       <body>
         <div class="header">
           <div>
-            <h1>KAM GRAINS SUPPLIES</h1>
+            <h1>${BUSINESS_PROFILE_FALLBACK.company_name}</h1>
             <p class="muted">Customer Payment Receipt</p>
           </div>
           <div class="right">

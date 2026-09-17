@@ -13,6 +13,7 @@ import {
 
 import { loginUser } from "@/api/client";
 import { useAuth } from "@/lib/auth";
+import { useBusinessProfile } from "@/lib/businessProfile";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,7 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const { login, isAuthenticated } = useAuth();
+  const { data: businessProfile } = useBusinessProfile();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -111,7 +113,7 @@ export default function Login() {
             </div>
 
             <h1 className="mt-8 text-5xl font-bold tracking-tight">
-              KAM GRAINS
+              {businessProfile.business_name}
             </h1>
 
             <p className="mt-3 max-w-xl text-lg text-slate-300">
@@ -145,7 +147,7 @@ export default function Login() {
 
               <div>
                 <CardTitle className="text-2xl font-bold">
-                  Sign in to KAM GRAINS
+                  Sign in to {businessProfile.business_name}
                 </CardTitle>
                 <p className="mt-2 text-sm text-slate-500">
                   Enter your username and password to continue.
@@ -232,7 +234,7 @@ export default function Login() {
                 </Button>
 
                 <p className="text-center text-xs text-slate-500">
-                  Access is restricted to authorized KAM GRAINS users.
+                  Access is restricted to authorized {businessProfile.business_name} users.
                 </p>
               </form>
             </CardContent>

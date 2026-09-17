@@ -28,6 +28,7 @@ import { downloadXlsx } from "@/lib/excelExport";
 
 import Can from "@/components/Can";
 import { ACTION_ROLES } from "@/lib/permissions";
+import { BUSINESS_PROFILE_FALLBACK } from "@/lib/businessProfile";
 import { useAuth } from "@/lib/auth";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -304,7 +305,7 @@ function buildPurchaseOrderPrintHtml({
 </head>
 <body>
   <div class="header">
-    <div class="business">KAM GRAINS SUPPLIES</div>
+    <div class="business">${BUSINESS_PROFILE_FALLBACK.company_name}</div>
     <div class="subtitle">Supplies Management System</div>
     <div class="doc-title">PURCHASE ORDER</div>
   </div>
@@ -345,7 +346,7 @@ function buildPurchaseOrderPrintHtml({
     <div class="sig-line">Supplier / Approved By</div>
   </div>
 
-  <div class="footer">Printed from KAM GRAINS SUPPLIES business management system.</div>
+  <div class="footer">Printed from ${BUSINESS_PROFILE_FALLBACK.company_name} business management system.</div>
 </body>
 </html>`;
 }

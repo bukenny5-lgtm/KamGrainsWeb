@@ -27,6 +27,7 @@ import { downloadXlsx } from "@/lib/excelExport";
 
 import Can from "@/components/Can";
 import { ACTION_ROLES } from "@/lib/permissions";
+import { BUSINESS_PROFILE_FALLBACK } from "@/lib/businessProfile";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -146,7 +147,7 @@ function getErrorMessage(error: unknown, fallbackMessage: string) {
   return fallbackMessage;
 }
 
-const BUSINESS_NAME = "KAM GRAINS SUPPLIES";
+const BUSINESS_NAME = BUSINESS_PROFILE_FALLBACK.company_name;
 const SYSTEM_NAME = "Supplies Management System";
 
 function escapeHtml(value: unknown) {

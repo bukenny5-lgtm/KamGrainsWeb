@@ -1,5 +1,29 @@
 export type ApiPayload = unknown;
 
+export type BusinessProfile = {
+  company_id: string | null;
+  company_name: string;
+  business_name: string;
+  business_type: string;
+  currency_code: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  logo_path: string | null;
+  timezone: string;
+};
+
+export type BusinessProfileResponse = {
+  success: boolean;
+  data: BusinessProfile;
+  business_profile?: BusinessProfile;
+  fallback?: boolean;
+};
+
+export type UpdateBusinessProfilePayload = Partial<Pick<BusinessProfile,
+  "company_name" | "business_name" | "business_type" | "phone" | "email" | "address" | "logo_path" | "timezone"
+>>;
+
 export type ApiListResponse<T, Key extends string = "data"> = {
   success: boolean;
   count: number;

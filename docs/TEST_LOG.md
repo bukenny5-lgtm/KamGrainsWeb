@@ -30,3 +30,31 @@
 ## Future Regression Requirements
 Before Phase 1 begins, confirm baseline build commands and preserve repeatable coverage for the current stable production workflow.
 
+## Phase 1 Validation — 2026-09-18
+
+| Test | Command / Scope | Status | Evidence / Notes |
+|---|---|---|---|
+| P1-BUILD-TS | `cd frontend; npx.cmd tsc -b --pretty false` | PASS | Completed successfully after final correction. |
+| P1-BUILD-FE | `cd frontend; npm.cmd run build` | PASS | Vite production build completed; existing chunk-size warning only. |
+| P1-BUILD-BE | `cd backend; npm.cmd run build` | PASS | Node syntax/build check completed successfully. |
+| P1-DIFF-001 | `git diff --check` | PASS | No whitespace errors; line-ending warnings only. |
+| P1-DB-001 | Migration/schema/profile verification | NOT RUN | Requires approved database runtime execution; migration was not applied. |
+| P1-API-001 | Authenticated GET/PATCH and unauthorized PATCH | NOT RUN | Postman/runtime validation required before Phase 1 approval. |
+| P1-UI-001 | Login, shell, Setup profile editor, print output | NOT RUN | Browser runtime validation required. |
+
+## Automated Runtime Validation — 2026-09-18
+
+- **Mechanism:** Temporary Node integration runner using `pg`, `fetch`, `jsonwebtoken`, the actual development `.env`, and the actual Express server over HTTP. Temporary runners were removed after execution.
+- **Database:** Development `kam_grains_db`; production database was not touched.
+- **Database state:** `timezone` exists with default `'Africa/Kampala'::text`; exactly one active profile exists and it is the intended KAM GRAINS profile with UGX and Africa/Kampala.
+- **GET:** PASS — HTTP 200; stable response shape and expected values returned.
+- **Unauthorized PATCH:** PASS — HTTP 401, `Authentication required. Please log in.`
+- **Authorized PATCH:** PASS — HTTP 200 using a JWT with the existing ADMIN/EDIT_SETUP role path.
+- **Partial update:** PASS — temporary phone/address values were reflected by GET; unrelated fields remained unchanged; original values restored.
+- **Protected fields:** PASS — `company_id` and `currency_code` rejected with HTTP 400 and `Unsupported business profile field(s): company_id, currency_code.`
+- **Invalid values:** PASS — empty `company_name`, `business_name`, and `timezone` each returned HTTP 400 with the expected field-specific message.
+- **Fallback:** PASS — fallback contract confirmed as KAM GRAINS / KAM GRAINS SUPPLIES / UGX / Africa/Kampala.
+- **Cleanup:** PASS — original values restored; no test rows created; one active intended profile remains; company ID and currency unchanged.
+- **Static validation:** Frontend TypeScript PASS; frontend build PASS; backend build PASS; `git diff --check` PASS.
+- **Status:** RUNTIME VALIDATION PASSED — UI SMOKE TEST PENDING
+

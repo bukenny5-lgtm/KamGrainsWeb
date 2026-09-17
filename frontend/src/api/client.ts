@@ -44,6 +44,8 @@ import type {
   ArPaymentDeleteResponse,
   ArPaymentPostResponse,
   CreateArPaymentPayload,
+  BusinessProfileResponse,
+  UpdateBusinessProfilePayload,
 
 } from "@/types/api";
 
@@ -88,6 +90,16 @@ function includeClosedValue(options?: boolean | { include_closed?: boolean }) {
 
 export async function getHealth() {
   const response = await api.get("/health");
+  return response.data;
+}
+
+export async function getBusinessProfile(): Promise<BusinessProfileResponse> {
+  const response = await api.get("/business-profile");
+  return response.data;
+}
+
+export async function updateBusinessProfile(payload: UpdateBusinessProfilePayload): Promise<BusinessProfileResponse> {
+  const response = await api.patch("/business-profile", payload);
   return response.data;
 }
 

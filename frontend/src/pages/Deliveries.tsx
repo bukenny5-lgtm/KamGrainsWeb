@@ -28,6 +28,7 @@ import { downloadXlsx } from "@/lib/excelExport";
 
 import Can from "@/components/Can";
 import { ACTION_ROLES } from "@/lib/permissions";
+import { BUSINESS_PROFILE_FALLBACK } from "@/lib/businessProfile";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -164,7 +165,7 @@ function formatMoney(value: unknown) {
   })}`;
 }
 
-const BUSINESS_NAME = "KAM GRAINS SUPPLIES";
+const BUSINESS_NAME = BUSINESS_PROFILE_FALLBACK.company_name;
 const BUSINESS_SUBTITLE = "Supplies Management System";
 
 function escapeHtml(value: unknown) {

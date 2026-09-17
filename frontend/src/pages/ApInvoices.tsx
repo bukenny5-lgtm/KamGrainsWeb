@@ -30,6 +30,7 @@ import type {
 
 import Can from "@/components/Can";
 import { ACTION_ROLES } from "@/lib/permissions";
+import { BUSINESS_PROFILE_FALLBACK } from "@/lib/businessProfile";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -346,9 +347,9 @@ function buildSupplierInvoicePrintHtml(
 <body>
   <div class="header">
     <div class="company">
-      <h1>KAM GRAINS SUPPLIES</h1>
+      <h1>${BUSINESS_PROFILE_FALLBACK.company_name}</h1>
       <p>Integrated Business Management System</p>
-      <p>Supplier invoice generated from KAM GRAINS.</p>
+      <p>Supplier invoice generated from ${BUSINESS_PROFILE_FALLBACK.business_name}.</p>
     </div>
     <div class="doc-title">
       <h2>SUPPLIER INVOICE</h2>

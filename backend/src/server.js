@@ -38,6 +38,7 @@ import paymentAccountsRoutes from "./routes/paymentAccounts.routes.js";
 import openingBalancesRoutes from "./routes/openingBalances.routes.js";
 import accruedExpensesRoutes from "./routes/accruedExpenses.routes.js";
 import apiPaymentChannelsRoutes from "./routes/apiPaymentChannels.routes.js";
+import businessProfileRoutes from "./routes/businessProfile.routes.js";
 
 // ✅ Import reconciliation routes
 import reconciliationRoutes from "./routes/reconciliations.routes.js";
@@ -91,6 +92,7 @@ app.use("/api/payment-accounts", paymentAccountsRoutes);
 app.use("/api/opening-balances", openingBalancesRoutes);
 app.use("/api/accrued-expenses", accruedExpensesRoutes);
 app.use("/api/api-payment-channels", apiPaymentChannelsRoutes);
+app.use("/api/business-profile", businessProfileRoutes);
 
 // ===============================
 // Operations routes

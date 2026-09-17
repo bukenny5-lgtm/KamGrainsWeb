@@ -51,3 +51,13 @@ Before deployment:
 5. Confirm previous production commit and artifact.
 6. Assign rollback ownership.
 7. Record rollback criteria.
+
+## Phase 0 Git Checkpoint
+
+- **Date:** 2026-09-17
+- **Commit:** `c103fff`
+- **Commit Message:** `phase-00: establish platform transformation baseline`
+- **Deployment:** None
+- **Database Migration:** None
+- **Services Restarted:** None
+- **Result:** Phase 0 baseline checkpoint created successfully.

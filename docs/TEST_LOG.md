@@ -80,3 +80,23 @@ Before Phase 1 begins, confirm baseline build commands and preserve repeatable c
 - **Browser validation:** BLOCKED — local browser automation could not attach/navigate to the Vite tab. Required Setup smoke cases remain NOT RUN.
 - **Status:** RUNTIME FIX APPLIED — UI SMOKE TEST PENDING
 
+## Phase 3 Minimal Feature Configuration — 2026-09-18
+
+| Test | Scope | Status | Evidence / Notes |
+|---|---|---|---|
+| P3-BUILD-TS | Frontend TypeScript | PASS | `npx.cmd tsc -b --pretty false` completed. |
+| P3-BUILD-FE | Frontend production build | PASS | `npm.cmd run build` completed successfully. |
+| P3-BUILD-BE | Backend syntax/build | PASS | Server, feature route/service syntax checks and backend build passed. |
+| P3-DIFF-001 | `git diff --check` | PASS | No whitespace errors; line-ending warnings only. |
+| P3-DB-001 | Phase 3 migration | PASS | Applied idempotently to development `kam_grains_db`; production untouched. |
+| P3-API-001 | Feature GET and KAM resolution | PASS | HTTP 200; current KAM features true; POS/barcode false. |
+| P3-AUTH-001 | Auth/permission checks | PASS | Unauthenticated GET 401; SALES-role PATCH 403. |
+| P3-TOGGLE-001 | Disable and restore | PASS | ADMIN disabled reports, observed false, then restored true. |
+| P3-VALIDATION-001 | Unknown feature | PASS | Unknown code returned HTTP 400. |
+| P3-AUDIT-001 | Existing audit integration | PASS | Feature changes recorded in `audit.event`. |
+| P3-REGRESSION-001 | Transaction preservation | PASS | Sales, purchase, and stock movement counts unchanged; KAM settings restored. |
+| P3-UI-001 | Authenticated browser smoke | BLOCKED | Login page loaded, but no authorized browser session/credentials were available to validate Setup/sidebar/direct-route flows. |
+
+- **Validation server:** New feature route exercised on isolated development port 3001; existing port-3000 process was not modified.
+- **Remaining approval item:** Authenticated browser smoke test and final UI approval.
+

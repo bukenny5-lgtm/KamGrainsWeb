@@ -22,120 +22,149 @@ import {
   UserCog,
   WalletCards,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import { ROLE_GROUPS, roleList } from "@/lib/permissions";
 import { useBusinessProfile } from "@/lib/businessProfile";
+import { useBusinessFeatures } from "@/lib/businessFeatures";
+import type { BusinessFeatureCode } from "@/types/api";
 
-const navItems = [
+type NavItem = {
+  label: string;
+  path: string;
+  icon: LucideIcon;
+  roles: string[];
+  feature?: BusinessFeatureCode;
+};
+
+const navItems: NavItem[] = [
   {
     label: "Dashboard",
     path: "/",
     icon: Home,
-    roles: roleList(ROLE_GROUPS.ALL_USERS),
+  roles: roleList(ROLE_GROUPS.ALL_USERS),
+    feature: undefined,
   },
   {
     label: "Inventory",
     path: "/inventory",
     icon: Boxes,
     roles: roleList(ROLE_GROUPS.INVENTORY_VIEW_ACCESS),
+    feature: "inventory",
   },
   {
     label: "Stock Movements",
     path: "/stock-movements",
     icon: ArrowRightLeft,
     roles: roleList(ROLE_GROUPS.INVENTORY_VIEW_ACCESS),
+    feature: "inventory",
   },
   {
     label: "Purchasing",
     path: "/purchasing",
     icon: ShoppingCart,
     roles: roleList(ROLE_GROUPS.PURCHASING_ACCESS),
+    feature: "purchasing",
   },
   {
     label: "GRN",
     path: "/grn",
     icon: PackageCheck,
     roles: roleList(ROLE_GROUPS.PURCHASING_ACCESS),
+    feature: "purchasing",
   },
   {
     label: "Cleaning Batches",
     path: "/cleaning",
     icon: Factory,
     roles: roleList(ROLE_GROUPS.INVENTORY_ACCESS),
+    feature: "cleaning",
   },
   {
     label: "Sales",
     path: "/sales",
     icon: Receipt,
     roles: roleList(ROLE_GROUPS.SALES_ACCESS),
+    feature: "sales",
   },
   {
     label: "Deliveries",
     path: "/deliveries",
     icon: Truck,
     roles: roleList(ROLE_GROUPS.SALES_ACCESS),
+    feature: "sales",
   },
   {
     label: "AR Invoices",
     path: "/ar-invoices",
     icon: FileText,
     roles: roleList(ROLE_GROUPS.SALES_ACCESS),
+    feature: "sales",
   },
   {
     label: "Receipts",
     path: "/receipts",
     icon: ReceiptText,
     roles: roleList(ROLE_GROUPS.FINANCE_ACCESS),
+    feature: "finance",
   },
   {
     label: "AP Invoices",
     path: "/ap-invoices",
     icon: FileText,
     roles: roleList(ROLE_GROUPS.FINANCE_ACCESS),
+    feature: "finance",
   },
   {
     label: "AP Payments",
     path: "/ap-payments",
     icon: ReceiptText,
     roles: roleList(ROLE_GROUPS.FINANCE_ACCESS),
+    feature: "finance",
   },
   {
     label: "Expense Vouchers",
     path: "/expense-vouchers",
     icon: ReceiptText,
     roles: roleList(ROLE_GROUPS.FINANCE_ACCESS),
+    feature: "finance",
   },
   {
     label: "Payment Accounts",
     path: "/payment-accounts",
     icon: WalletCards,
     roles: roleList(ROLE_GROUPS.FINANCE_ACCESS),
+    feature: "finance",
   },
   {
     label: "Reconciliation",
     path: "/reconciliations",
     icon: Landmark,
     roles: roleList(ROLE_GROUPS.FINANCE_ACCESS),
+    feature: "finance",
   },
   {
     label: "API Payment Channels",
     path: "/api-payment-channels",
     icon: Cable,
     roles: roleList(ROLE_GROUPS.FINANCE_ACCESS),
+    feature: "finance",
   },
   {
     label: "Opening Balances",
     path: "/opening-balances",
     icon: FileText,
     roles: roleList(ROLE_GROUPS.FINANCE_ACCESS),
+    feature: "finance",
   },
   {
     label: "Accrued Expenses",
     path: "/accrued-expenses",
     icon: FileText,
     roles: roleList(ROLE_GROUPS.FINANCE_ACCESS),
+    feature: "finance",
   },
   {
     label: "Finance",
@@ -148,24 +177,28 @@ const navItems = [
     path: "/journals",
     icon: FileText,
     roles: roleList(ROLE_GROUPS.JOURNAL_ACCESS),
+    feature: "finance",
   },
   {
     label: "Reports",
     path: "/reports",
     icon: BarChart3,
     roles: roleList(ROLE_GROUPS.REPORT_ACCESS),
+    feature: "reports",
   },
   {
     label: "Stock Count",
     path: "/stock-count",
     icon: ClipboardList,
     roles: roleList(ROLE_GROUPS.INVENTORY_ACCESS),
+    feature: "inventory",
   },
   {
     label: "Stock Adjustments",
     path: "/stock-adjustments",
     icon: ArrowRightLeft,
     roles: roleList(ROLE_GROUPS.INVENTORY_ACCESS),
+    feature: "inventory",
   },
   {
     label: "Setup",
@@ -233,9 +266,10 @@ function getPageSubtitle(pathname: string) {
 export default function AppLayout() {
   const { user, logout, hasRole } = useAuth();
   const { data: businessProfile } = useBusinessProfile();
+  const { hasFeature } = useBusinessFeatures();
   const location = useLocation();
 
-  const visibleNavItems = navItems.filter((item) => hasRole(item.roles));
+  const visibleNavItems = navItems.filter((item) => hasRole(item.roles) && (!item.feature || hasFeature(item.feature)));
   const pageTitle = getPageTitle(location.pathname);
   const pageSubtitle = getPageSubtitle(location.pathname);
 

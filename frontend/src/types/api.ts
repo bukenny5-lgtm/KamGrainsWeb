@@ -56,6 +56,41 @@ export type BusinessProfileResponse = {
   fallback?: boolean;
 };
 
+export type BusinessFeatureCode =
+  | "sales"
+  | "purchasing"
+  | "inventory"
+  | "cleaning"
+  | "finance"
+  | "reports"
+  | "pos"
+  | "barcode";
+
+export type BusinessFeatureDefinition = {
+  feature_code: BusinessFeatureCode;
+  feature_name: string;
+  feature_group: "CURRENT" | "FUTURE" | string | null;
+  description: string | null;
+  is_enabled: boolean;
+  override_enabled?: boolean | null;
+  updated_at?: string | null;
+  updated_by?: string | null;
+};
+
+export type BusinessFeatures = Record<BusinessFeatureCode, boolean>;
+
+export type BusinessFeaturesResponse = {
+  success: boolean;
+  company_id: string | null;
+  features: Partial<BusinessFeatures>;
+  definitions: BusinessFeatureDefinition[];
+  fallback?: boolean;
+};
+
+export type UpdateBusinessFeaturesPayload = {
+  features: Partial<BusinessFeatures>;
+};
+
 export type UpdateBusinessProfilePayload = Partial<Pick<BusinessProfile,
   "company_name" | "business_name" | "business_type" | "phone" | "email" | "address" | "logo_path" | "timezone"
 >>;

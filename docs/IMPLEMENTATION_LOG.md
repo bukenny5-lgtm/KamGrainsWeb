@@ -137,7 +137,18 @@ PENDING
 3. Begin Phase 1 planning.
 4. Keep Phase 1 implementation separate from the Phase 0 checkpoint.
 
+## 2026-09-18 — Phase 3 Minimal Feature Configuration
+
+- **Status:** Implemented; runtime/API validation passed; authenticated browser UI smoke validation remains required before approval/commit.
+- **Files changed:** Phase 3 migration, backend feature service/route/server mount, frontend feature types/API/hook, navigation, route guard, Setup feature panel, and documentation.
+- **Architecture:** Generic `app.feature` catalogue plus `app.company_feature` overrides; `business_type` remains descriptive metadata.
+- **Catalogue:** Sales, purchasing, inventory, cleaning, finance, and reports enabled for KAM; POS and barcode seeded as future disabled placeholders.
+- **Authorization/audit:** Existing `EDIT_SETUP` remains the mutation permission; feature changes use existing `audit.event` with old/new values, company, feature, user, and timestamp.
+- **Transaction safety:** No transaction tables, posting logic, permission tables, or business calculations changed.
+- **Deployment/commit:** No deployment, production restart, or commit performed.
 
 
 
 
+
+- **Phase 3 Step 1 — Feature flags/business profiles inspection (2026-09-18):** Completed capability inspection and design-gap analysis only. Findings and recommended architecture are recorded in `docs/PHASE3_FEATURE_FLAGS_INSPECTION.md`. No schema, migration, code gating, POS work, deployment, or commit performed.

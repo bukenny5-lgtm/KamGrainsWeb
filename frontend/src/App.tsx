@@ -67,7 +67,7 @@ const router = createBrowserRouter([
       {
         path: "inventory",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.INVENTORY_VIEW_ACCESS)}>
+          <ProtectedRoute feature="inventory" allowedRoles={roleList(ROLE_GROUPS.INVENTORY_VIEW_ACCESS)}>
             <InventoryStock />
           </ProtectedRoute>
         ),
@@ -75,7 +75,7 @@ const router = createBrowserRouter([
       {
         path: "stock-movements",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.INVENTORY_VIEW_ACCESS)}>
+          <ProtectedRoute feature="inventory" allowedRoles={roleList(ROLE_GROUPS.INVENTORY_VIEW_ACCESS)}>
             <StockMovements />
           </ProtectedRoute>
         ),
@@ -83,7 +83,7 @@ const router = createBrowserRouter([
       {
         path: "purchasing",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.PURCHASING_ACCESS)}>
+          <ProtectedRoute feature="purchasing" allowedRoles={roleList(ROLE_GROUPS.PURCHASING_ACCESS)}>
             <PurchaseOrders />
           </ProtectedRoute>
         ),
@@ -91,7 +91,7 @@ const router = createBrowserRouter([
       {
         path: "grn",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.PURCHASING_ACCESS)}>
+          <ProtectedRoute feature="purchasing" allowedRoles={roleList(ROLE_GROUPS.PURCHASING_ACCESS)}>
             <GoodsReceipts />
           </ProtectedRoute>
         ),
@@ -99,7 +99,7 @@ const router = createBrowserRouter([
       {
         path: "cleaning",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.INVENTORY_ACCESS)}>
+          <ProtectedRoute feature="cleaning" allowedRoles={roleList(ROLE_GROUPS.INVENTORY_ACCESS)}>
             <CleaningBatches />
           </ProtectedRoute>
         ),
@@ -107,7 +107,7 @@ const router = createBrowserRouter([
       {
         path: "sales",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.SALES_ACCESS)}>
+          <ProtectedRoute feature="sales" allowedRoles={roleList(ROLE_GROUPS.SALES_ACCESS)}>
             <SalesOrders />
           </ProtectedRoute>
         ),
@@ -115,7 +115,7 @@ const router = createBrowserRouter([
       {
         path: "deliveries",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.SALES_ACCESS)}>
+          <ProtectedRoute feature="sales" allowedRoles={roleList(ROLE_GROUPS.SALES_ACCESS)}>
             <Deliveries />
           </ProtectedRoute>
         ),
@@ -123,7 +123,7 @@ const router = createBrowserRouter([
       {
         path: "ar-invoices",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.SALES_ACCESS)}>
+          <ProtectedRoute feature="sales" allowedRoles={roleList(ROLE_GROUPS.SALES_ACCESS)}>
             <ArInvoices />
           </ProtectedRoute>
         ),
@@ -131,7 +131,7 @@ const router = createBrowserRouter([
       {
         path: "receipts",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.FINANCE_ACCESS)}>
+          <ProtectedRoute feature="finance" allowedRoles={roleList(ROLE_GROUPS.FINANCE_ACCESS)}>
             <ArPayments />
           </ProtectedRoute>
         ),
@@ -139,7 +139,7 @@ const router = createBrowserRouter([
       {
         path: "ap-invoices",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.FINANCE_ACCESS)}>
+          <ProtectedRoute feature="finance" allowedRoles={roleList(ROLE_GROUPS.FINANCE_ACCESS)}>
             <ApInvoices />
           </ProtectedRoute>
         ),
@@ -147,7 +147,7 @@ const router = createBrowserRouter([
       {
         path: "ap-payments",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.FINANCE_ACCESS)}>
+          <ProtectedRoute feature="finance" allowedRoles={roleList(ROLE_GROUPS.FINANCE_ACCESS)}>
             <ApPayments />
           </ProtectedRoute>
         ),
@@ -155,7 +155,7 @@ const router = createBrowserRouter([
       {
         path: "opening-balances",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.FINANCE_ACCESS)}>
+          <ProtectedRoute feature="finance" allowedRoles={roleList(ROLE_GROUPS.FINANCE_ACCESS)}>
             <OpeningBalances />
           </ProtectedRoute>
         ),
@@ -163,7 +163,7 @@ const router = createBrowserRouter([
       {
         path: "expense-vouchers",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.FINANCE_ACCESS)}>
+          <ProtectedRoute feature="finance" allowedRoles={roleList(ROLE_GROUPS.FINANCE_ACCESS)}>
             <ExpenseVouchers />
           </ProtectedRoute>
         ),
@@ -171,7 +171,7 @@ const router = createBrowserRouter([
       {
         path: "accrued-expenses",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.FINANCE_ACCESS)}>
+          <ProtectedRoute feature="finance" allowedRoles={roleList(ROLE_GROUPS.FINANCE_ACCESS)}>
             <AccruedExpenses />
           </ProtectedRoute>
         ),
@@ -179,7 +179,7 @@ const router = createBrowserRouter([
       {
         path: "payment-accounts",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.FINANCE_ACCESS)}>
+          <ProtectedRoute feature="finance" allowedRoles={roleList(ROLE_GROUPS.FINANCE_ACCESS)}>
             <PaymentAccounts />
           </ProtectedRoute>
         ),
@@ -187,7 +187,7 @@ const router = createBrowserRouter([
       {
         path: "reconciliations",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.FINANCE_ACCESS)}>
+          <ProtectedRoute feature="finance" allowedRoles={roleList(ROLE_GROUPS.FINANCE_ACCESS)}>
             <Reconciliations />
           </ProtectedRoute>
         ),
@@ -195,7 +195,7 @@ const router = createBrowserRouter([
       {
         path: "api-payment-channels",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.FINANCE_ACCESS)}>
+          <ProtectedRoute feature="finance" allowedRoles={roleList(ROLE_GROUPS.FINANCE_ACCESS)}>
             <ApiPaymentChannels />
           </ProtectedRoute>
         ),
@@ -235,7 +235,7 @@ const router = createBrowserRouter([
       {
         path: "reports",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.REPORT_ACCESS)}>
+          <ProtectedRoute feature="reports" allowedRoles={roleList(ROLE_GROUPS.REPORT_ACCESS)}>
             <Reports />
           </ProtectedRoute>
         ),
@@ -243,7 +243,7 @@ const router = createBrowserRouter([
       {
         path: "journals",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.JOURNAL_ACCESS)}>
+          <ProtectedRoute feature="finance" allowedRoles={roleList(ROLE_GROUPS.JOURNAL_ACCESS)}>
             <Journals />
           </ProtectedRoute>
         ),
@@ -251,7 +251,7 @@ const router = createBrowserRouter([
       {
         path: "stock-count",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.INVENTORY_ACCESS)}>
+          <ProtectedRoute feature="inventory" allowedRoles={roleList(ROLE_GROUPS.INVENTORY_ACCESS)}>
             <StockCount />
           </ProtectedRoute>
         ),
@@ -259,7 +259,7 @@ const router = createBrowserRouter([
       {
         path: "stock-adjustments",
         element: (
-          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.INVENTORY_ACCESS)}>
+          <ProtectedRoute feature="inventory" allowedRoles={roleList(ROLE_GROUPS.INVENTORY_ACCESS)}>
             <StockAdjustments />
           </ProtectedRoute>
         ),

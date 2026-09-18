@@ -135,3 +135,17 @@ Each error entry should include:
 - Use `NOT RUN` when validation was not executed.
 - Use `UNKNOWN` where evidence is unavailable.
 - Link each error to the relevant commit when known.
+## ERR-P3-FEATURE-AUDIT-001 — Phase 3 Feature Audit Insert Type Error — 2026-09-18
+
+- **Module:** Business feature configuration API
+- **Environment:** Development PostgreSQL and isolated Express server on port 3001
+- **Exact Error:** Initial authorized feature PATCH returned HTTP 500 with PostgreSQL `could not determine data type of parameter $3`.
+- **Reproduction:** Apply `PATCH /api/business-features` with an ADMIN JWT and `{ "features": { "reports": false } }`.
+- **Root Cause:** Parameters embedded in `jsonb_build_object` were not explicitly typed for the audit insert.
+- **Fix:** Cast feature code and boolean old/new values in `backend/src/routes/businessFeatures.routes.js`.
+- **Impact:** Development validation only; no transaction rows or production systems affected.
+- **Files Changed:** `backend/src/routes/businessFeatures.routes.js`.
+- **Database Objects Changed:** None beyond the already-applied Phase 3 feature tables; the failed transaction rolled back.
+- **Migration:** `database/migrations/phase_13_feature_flags.sql` was not changed for this defect.
+- **Regression Risk:** Low; explicit parameter casts are limited to audit serialization.
+- **Validation:** Authorized disable/restore PATCH returned HTTP 200 after restart; the failed attempt rolled back and left KAM configuration unchanged.

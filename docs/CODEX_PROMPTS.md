@@ -36,6 +36,15 @@ Each significant prompt record should include:
 - Do not include secrets, credentials, tokens, or private configuration values.
 - Link prompt results to implementation and deployment records where applicable.
 
+## 2026-09-18 — Phase 3 / Minimal Feature Configuration
+
+- **Objective:** Implement the approved generic feature catalogue, per-company overrides, resolved API, frontend hook, navigation/route gating, Setup controls, audit trail, and KAM-safe fallback without changing transaction logic.
+- **Prompt:** Phase 3 Step 2 minimal feature-configuration implementation brief supplied in the project request.
+- **Result:** Implemented and API/runtime-validated against development PostgreSQL and the isolated Express server; authenticated browser smoke remains pending.
+- **Files Changed:** Phase 3 migration, backend feature service/route/server mount, frontend feature contracts/API/hook, navigation, route guard, Setup, and documentation.
+- **Accepted/Modified:** POS/barcode remain non-editable and disabled; industry presets and backend transaction-route gating were not implemented.
+- **Notes:** No deployment, production restart, or commit performed.
+
 ## 2026-09-18 — Phase 2 / Minimal Universal Product Foundation
 
 - **Objective:** Add only description, purchasable, stock-item, and normalized product-category support while preserving existing workflows.

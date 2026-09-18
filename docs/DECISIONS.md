@@ -104,3 +104,12 @@
 - Record context and decision separately.
 - Record consequences and alternatives.
 - Do not silently change accepted decisions; supersede them with a new ADR.
+
+## ADR-0012 — Generic Feature Catalogue with Per-Company Overrides
+- **Date:** 2026-09-18
+- **Status:** Accepted for Phase 3 implementation
+- **Context:** Businesses need capability configuration while user authorization remains independent and KAM's current workflow remains stable.
+- **Decision:** Store controlled feature definitions in `app.feature` and per-company overrides in `app.company_feature`. Resolve an override when present, otherwise use the catalogue default. Future industry profiles may seed configuration as onboarding presets but must not become runtime `business_type` switches.
+- **Consequences:** Feature state is queryable and auditable without coupling capability flags to company identity. Access requires both feature enablement and existing authorization. KAM defaults preserve current modules; POS/barcode remain disabled until implemented.
+- **Alternatives Considered:** Boolean columns on `app.company_profile`, JSON-only configuration, and immediate industry-template runtime logic.
+- **Related Phase:** Phase 3, Phase 4, Phase 19.

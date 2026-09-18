@@ -49,6 +49,20 @@
 - Database-per-business multi-tenancy
 - Subscription and SaaS capabilities
 
+## Phase 3 Step 1 Status — 2026-09-18
+
+- **Current step:** Feature flags / business profiles capability inspection and design-gap analysis complete.
+- **Implementation:** Not started; no schema change, migration, feature gating, or POS work created.
+- **Recommendation:** Review `docs/PHASE3_FEATURE_FLAGS_INSPECTION.md`; approve the minimal feature catalogue and company-feature architecture before implementation.
+- **Status:** PHASE 3 INSPECTION COMPLETE — IMPLEMENTATION APPROVAL REQUIRED.
+
+## Phase 3 Step 2 Status — 2026-09-18
+
+- **Implementation:** Minimal feature catalogue, per-company overrides, resolved API, shared hook, feature-aware navigation/route protection, and Setup controls implemented.
+- **Development runtime:** Migration and real Express/PostgreSQL API validation passed; KAM settings restored with current features enabled and POS/barcode disabled.
+- **Browser validation:** Authenticated UI smoke test remains pending because no authorized browser session was available.
+- **Approval:** Do not mark Phase 3 complete or commit until browser smoke validation passes.
+
 ## Phase 0 Restrictions
 - Do not start Phase 1.
 - Do not change frontend business logic.

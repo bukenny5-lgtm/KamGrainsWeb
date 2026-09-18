@@ -47,6 +47,8 @@ import type {
   BusinessProfileResponse,
   UpdateBusinessProfilePayload,
   ProductCategoryResponse,
+  BusinessFeaturesResponse,
+  UpdateBusinessFeaturesPayload,
 
 } from "@/types/api";
 
@@ -101,6 +103,16 @@ export async function getBusinessProfile(): Promise<BusinessProfileResponse> {
 
 export async function updateBusinessProfile(payload: UpdateBusinessProfilePayload): Promise<BusinessProfileResponse> {
   const response = await api.patch("/business-profile", payload);
+  return response.data;
+}
+
+export async function getBusinessFeatures(): Promise<BusinessFeaturesResponse> {
+  const response = await api.get("/business-features");
+  return response.data;
+}
+
+export async function updateBusinessFeatures(payload: UpdateBusinessFeaturesPayload): Promise<BusinessFeaturesResponse> {
+  const response = await api.patch("/business-features", payload);
   return response.data;
 }
 

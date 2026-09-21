@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -485,6 +485,11 @@ export default function ArInvoices() {
   },
 });
 
+  useEffect(() => {
+    postInvoiceMutation.reset();
+    voidInvoiceMutation.reset();
+  }, [selectedInvoiceId, isDetailsOpen]);
+
   const invoices: ArInvoiceSummaryRow[] = invoicesQuery.data ?? [];
 const deliveries: ArInvoiceDeliveryRow[] = normalizeArray<ArInvoiceDeliveryRow>(
   deliveriesQuery.data,
@@ -665,6 +670,9 @@ const totalBalance = filteredRows.reduce(
   function handlePostInvoice() {
     if (!detailHeader?.invoice_no) return;
 
+    postInvoiceMutation.reset();
+    voidInvoiceMutation.reset();
+
     const confirmed = window.confirm(
       `Post customer invoice ${detailHeader.invoice_no}? This will create the accounting journal.`
     );
@@ -676,6 +684,11 @@ const totalBalance = filteredRows.reduce(
 
   function handleVoidInvoice() {
     if (!detailHeader?.invoice_no) return;
+    if (detailHeader.pos_sale_no) {
+      window.alert(`This receivable was created from POS sale ${detailHeader.pos_sale_no}. Use the originating POS sale or Customer Returns.`);
+      return;
+    }
+    voidInvoiceMutation.reset();
     if (String(detailHeader.status || "").toUpperCase() === "VOID") {
       window.alert("This invoice is already voided and cannot be voided again.");
       return;
@@ -1028,7 +1041,13 @@ const totalBalance = filteredRows.reduce(
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
+      <Dialog open={isDetailsOpen} onOpenChange={(open) => {
+        if (!open) {
+          postInvoiceMutation.reset();
+          voidInvoiceMutation.reset();
+        }
+        setIsDetailsOpen(open);
+      }}>
         <DialogContent className="max-h-[90vh] w-[96vw] !max-w-[1100px] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>AR Invoice Details</DialogTitle>
@@ -1371,13 +1390,16 @@ const totalBalance = filteredRows.reduce(
                     variant="destructive"
                     onClick={handleVoidInvoice}
                     disabled={
+                      Boolean(detailHeader.pos_sale_no) ||
                       String(detailHeader.status || "").toUpperCase() === "VOID" ||
                       !isInvoicePosted(detailHeader) ||
                       voidInvoiceMutation.isPending ||
                       !detailHeader?.invoice_no
                     }
                   >
-                    {voidInvoiceMutation.isPending ? (
+                    {detailHeader.pos_sale_no ? (
+                      <>POS-linked AR · use Customer Returns</>
+                    ) : voidInvoiceMutation.isPending ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         Voiding...

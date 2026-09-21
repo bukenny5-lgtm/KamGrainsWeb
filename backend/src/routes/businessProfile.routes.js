@@ -15,6 +15,7 @@ const FALLBACKS = {
   address: "Kampala, Uganda",
   logo_path: null,
   timezone: "Africa/Kampala",
+  pos_pricing_mode: "FIXED",
 };
 
 const PROFILE_COLUMNS = [
@@ -26,6 +27,7 @@ const PROFILE_COLUMNS = [
   "address",
   "logo_path",
   "timezone",
+  "pos_pricing_mode",
 ];
 
 function toProfile(row) {
@@ -40,13 +42,14 @@ function toProfile(row) {
     address: row?.address || FALLBACKS.address,
     logo_path: row?.logo_path ?? FALLBACKS.logo_path,
     timezone: row?.timezone || FALLBACKS.timezone,
+    pos_pricing_mode: row?.pos_pricing_mode || FALLBACKS.pos_pricing_mode,
   };
 }
 
 async function loadProfile() {
   const result = await query(`
     SELECT company_id, company_name, business_name, business_type,
-           currency_code, phone, email, address, logo_path, timezone
+           currency_code, phone, email, address, logo_path, timezone, pos_pricing_mode
     FROM app.company_profile
     WHERE is_active = true
     ORDER BY created_at, company_id
@@ -101,6 +104,9 @@ router.patch(
         if (field === "timezone" && (!String(body[field] || "").trim() || String(body[field]).length > 100)) {
           return res.status(400).json({ success: false, message: "timezone must be a non-empty value of 100 characters or fewer." });
         }
+        if (field === "pos_pricing_mode" && !["FIXED", "MANUAL", "HYBRID"].includes(String(body[field] || "").toUpperCase())) {
+          return res.status(400).json({ success: false, message: "pos_pricing_mode must be FIXED, MANUAL, or HYBRID." });
+        }
         if (["company_name", "business_name"].includes(field) && !String(body[field] || "").trim()) {
           return res.status(400).json({ success: false, message: `${field} cannot be empty.` });
         }
@@ -121,7 +127,7 @@ router.patch(
           LIMIT 1
         )
         RETURNING company_id, company_name, business_name, business_type,
-                  currency_code, phone, email, address, logo_path, timezone;
+                  currency_code, phone, email, address, logo_path, timezone, pos_pricing_mode;
       `, values);
 
       if (!result.rowCount) {

@@ -36,6 +36,60 @@ export type ProductCategory = {
 export type ProductCategoryResponse = ApiListResponse<ProductCategory, "categories">;
 export type ProductUpdatePayload = Partial<Omit<Product, "product_id" | "category_code" | "category_name">> & Pick<Product, "sku" | "product_name" | "product_type" | "uom_code">;
 
+export type PosLotOption = {
+  lot_id: string;
+  lot_code: string;
+  expiry_date?: string | null;
+  qty_on_hand: string | number;
+};
+
+export type PosProduct = {
+  product_id: string;
+  sku: string;
+  product_name: string;
+  product_type: string;
+  uom_code: string;
+  is_stock_item: boolean;
+  track_lots: boolean;
+  track_expiry: boolean;
+  unit_price?: string | number | null;
+  pricing_mode?: "FIXED" | "MANUAL" | "HYBRID" | string;
+  barcodes?: Array<{ barcode_id: string; barcode: string; uom_code?: string | null; qty_per_scan: string | number }>;
+  qty_on_hand?: string | number | null;
+  lots?: PosLotOption[];
+};
+
+export type PosSaleLine = {
+  pos_sale_line_id?: string;
+  product_id: string;
+  sku?: string;
+  product_name?: string;
+  qty: string | number;
+  unit_price: string | number;
+  line_total: string | number;
+  lot_id?: string | null;
+  lot_code?: string | null;
+};
+
+export type PosSale = {
+  pos_sale_id: string;
+  sale_no: string;
+  transaction_date: string;
+  sale_ts: string;
+  location_id: string;
+  location_name?: string;
+  customer_id?: string | null;
+  customer_name?: string | null;
+  payment_method: string;
+  amount_tendered?: string | number | null;
+  change_amount: string | number;
+  subtotal: string | number;
+  total_amount: string | number;
+  status: string;
+  cashier_name?: string | null;
+  lines: PosSaleLine[];
+};
+
 export type BusinessProfile = {
   company_id: string | null;
   company_name: string;
@@ -47,6 +101,7 @@ export type BusinessProfile = {
   address: string | null;
   logo_path: string | null;
   timezone: string;
+  pos_pricing_mode?: "FIXED" | "MANUAL" | "HYBRID" | string;
 };
 
 export type BusinessProfileResponse = {
@@ -370,6 +425,7 @@ export interface ArInvoiceSummaryRow {
   delivery_id?: string | null;
   delivery_no?: string | null;
   so_no?: string | null;
+  pos_sale_no?: string | null;
 
   invoice_date?: string | null;
   due_date?: string | null;
@@ -474,6 +530,7 @@ export interface ArInvoice {
   delivery_no?: string | null;
 
   so_no?: string | null;
+  pos_sale_no?: string | null;
 
   invoice_date?: string | null;
   due_date?: string | null;

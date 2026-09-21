@@ -1,0 +1,522 @@
+import express from "express";
+import { pool, query } from "../db.js";
+import { requireAuth } from "../middleware/auth.js";
+import { requirePermission, getUserRoles, ACTION_ROLES } from "../middleware/permissions.js";
+import { getActiveCompanyId, resolveBusinessFeatureMap } from "../services/businessFeatures.service.js";
+import { setDatabaseUserContext } from "../utils/uuid.js";
+
+const router = express.Router();
+
+async function requirePosFeature(req, res, next) {
+  try {
+    const companyId = await getActiveCompanyId();
+    const features = await resolveBusinessFeatureMap(companyId);
+    if (!features.pos) {
+      return res.status(404).json({ success: false, message: "POS is not enabled for this business." });
+    }
+    return next();
+  } catch (error) {
+    return res.status(503).json({ success: false, message: "POS feature state is unavailable.", error: error.message });
+  }
+}
+
+async function requireBarcodeFeature(req, res, next) {
+  try {
+    const companyId = await getActiveCompanyId();
+    const features = await resolveBusinessFeatureMap(companyId);
+    if (!features.barcode) return res.status(404).json({ success: false, message: "Barcode is not enabled for this business." });
+    return next();
+  } catch (error) {
+    return res.status(503).json({ success: false, message: "Barcode feature state is unavailable.", error: error.message });
+  }
+}
+
+function normalizePaymentMethod(value) {
+  const method = String(value || "CASH").trim().toUpperCase();
+  if (method === "MOBILE") return "MOBILE_MONEY";
+  if (method === "BANK TRANSFER") return "BANK_TRANSFER";
+  return method;
+}
+
+function hasAction(req, action) {
+  const roles = getUserRoles(req);
+  return (ACTION_ROLES[action] || []).some((role) => roles.includes(role));
+}
+
+async function getPricingMode() {
+  const result = await query("SELECT COALESCE(pos_pricing_mode, 'FIXED') AS pos_pricing_mode FROM app.company_profile WHERE is_active = true ORDER BY created_at, company_id LIMIT 1;");
+  return result.rows[0]?.pos_pricing_mode || "FIXED";
+}
+
+async function resolveLocationId(locationId) {
+  const result = await query(
+    `SELECT location_id FROM app.location WHERE is_active = true AND ($1::uuid IS NULL OR location_id = $1::uuid) ORDER BY location_name LIMIT 1;`,
+    [locationId || null]
+  );
+  return result.rows[0]?.location_id || null;
+}
+
+async function loadSaleById(saleId) {
+  const result = await query(`
+    SELECT
+      ps.pos_sale_id,
+      ps.sale_no,
+      ps.transaction_date,
+      ps.sale_ts,
+      ps.location_id,
+      loc.location_name,
+      ps.customer_id,
+      customer.party_name AS customer_name,
+      ps.payment_method,
+      ps.due_date,
+      ps.credit_ar_invoice_id,
+      ps.amount_tendered,
+      ps.change_amount,
+      ps.subtotal,
+      ps.total_amount,
+      ps.status,
+      ps.posted_at,
+      ps.posted_by,
+      ps.voided_at,
+      ps.voided_by,
+      ps.void_reason,
+      ps.posted_movement_id,
+      ps.posted_journal_id,
+      ps.reversal_movement_id,
+      ps.reversal_journal_id,
+      ps.created_at,
+      ps.created_by,
+      u.full_name AS cashier_name,
+      COALESCE((
+        SELECT json_agg(json_build_object(
+          'pos_sale_line_id', l.pos_sale_line_id,
+          'product_id', l.product_id,
+          'sku', p.sku,
+          'product_name', p.product_name,
+          'qty', l.qty,
+          'unit_price', l.unit_price,
+          'line_total', l.line_total,
+          'lot_id', l.lot_id,
+          'lot_code', lot.lot_code
+        ) ORDER BY l.created_at, l.pos_sale_line_id)
+        FROM sal.pos_sale_line l
+        JOIN inv.product p ON p.product_id = l.product_id
+        LEFT JOIN inv.lot lot ON lot.lot_id = l.lot_id
+        WHERE l.pos_sale_id = ps.pos_sale_id
+      ), '[]'::json) AS lines
+    FROM sal.pos_sale ps
+    JOIN app.location loc ON loc.location_id = ps.location_id
+    LEFT JOIN app.party customer ON customer.party_id = ps.customer_id
+    LEFT JOIN sec.app_user u ON u.user_id = ps.created_by
+    WHERE ps.pos_sale_id = $1;`,
+    [saleId]
+  );
+  return result.rows[0] || null;
+}
+
+async function savePosPrice(productId, unitPrice, userId) {
+  const result = await query(`
+    INSERT INTO sal.pos_product_price(product_id, unit_price, is_active, created_by, updated_by, updated_at)
+    VALUES ($1, $2, true, $3, $3, now())
+    ON CONFLICT (product_id) DO UPDATE
+      SET unit_price = EXCLUDED.unit_price,
+          is_active = true,
+          updated_by = EXCLUDED.updated_by,
+          updated_at = now()
+    RETURNING product_id, unit_price, is_active, created_at, updated_at;`,
+    [productId, unitPrice, userId || null]
+  );
+  return result.rows[0];
+}
+
+router.get("/prices", requireAuth, requirePosFeature, requirePermission("VIEW_POS"), async (req, res) => {
+  try {
+    const search = String(req.query.q || "").trim();
+    const result = await query(`
+      SELECT p.product_id, p.sku, p.product_name, p.is_active AS product_active,
+             p.is_saleable, pp.unit_price, COALESCE(pp.is_active, false) AS price_active,
+             pp.created_at AS price_created_at, pp.updated_at AS price_updated_at
+      FROM inv.product p
+      LEFT JOIN sal.pos_product_price pp ON pp.product_id = p.product_id
+      WHERE ($1 = '' OR p.sku ILIKE '%' || $1 || '%' OR p.product_name ILIKE '%' || $1 || '%')
+      ORDER BY p.product_name LIMIT 500;`, [search]);
+    return res.json({ success: true, count: result.rowCount, prices: result.rows, data: result.rows });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Failed to load product prices.", error: error.message });
+  }
+});
+
+router.get("/prices/:productId", requireAuth, requirePosFeature, requirePermission("VIEW_POS"), async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT p.product_id, p.sku, p.product_name, p.is_active AS product_active,
+             p.is_saleable, pp.unit_price, COALESCE(pp.is_active, false) AS price_active,
+             pp.created_at AS price_created_at, pp.updated_at AS price_updated_at
+      FROM inv.product p LEFT JOIN sal.pos_product_price pp ON pp.product_id = p.product_id
+      WHERE p.product_id = $1;`, [req.params.productId]);
+    if (!result.rowCount) return res.status(404).json({ success: false, message: "Product not found." });
+    return res.json({ success: true, data: result.rows[0], price: result.rows[0] });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Failed to load product price.", error: error.message });
+  }
+});
+
+router.post("/prices", requireAuth, requirePosFeature, requirePermission("EDIT_SETUP"), async (req, res) => {
+  try {
+    const price = Number(req.body?.unit_price);
+    if (!req.body?.product_id) return res.status(400).json({ success: false, message: "product_id is required." });
+    if (!Number.isFinite(price) || price < 0) return res.status(400).json({ success: false, message: "unit_price must be a non-negative number." });
+    const data = await savePosPrice(req.body.product_id, price, req.user?.user_id);
+    return res.status(201).json({ success: true, message: "POS price saved.", data, price: data });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: "Failed to save POS price.", error: error.message });
+  }
+});
+
+router.get(
+  "/products",
+  requireAuth,
+  requirePosFeature,
+  requirePermission("VIEW_POS"),
+  async (req, res) => {
+    try {
+      const search = String(req.query.q || "").trim();
+      const locationId = await resolveLocationId(req.query.location_id || null);
+      if (!locationId) return res.status(409).json({ success: false, message: "An active POS location is required." });
+
+      const result = await query(`
+        WITH stock AS (
+          SELECT
+            sml.product_id,
+            SUM(CASE
+              WHEN sml.to_location_id = $1 THEN sml.qty
+              WHEN sml.from_location_id = $1 THEN -sml.qty
+              ELSE 0
+            END) AS qty_on_hand
+          FROM inv.stock_movement_line sml
+          JOIN inv.stock_movement sm ON sm.movement_id = sml.movement_id
+          GROUP BY sml.product_id
+        )
+    SELECT
+          p.product_id,
+          p.sku,
+          p.product_name,
+          p.product_type,
+          p.uom_code,
+          p.is_stock_item,
+          p.track_lots,
+          p.track_expiry,
+          pp.unit_price,
+          COALESCE(cp.pos_pricing_mode, 'FIXED') AS pricing_mode,
+          COALESCE((SELECT json_agg(json_build_object('barcode_id', pb.barcode_id, 'barcode', pb.barcode, 'uom_code', pb.uom_code, 'qty_per_scan', pb.qty_per_scan) ORDER BY pb.barcode) FROM inv.product_barcode pb WHERE pb.product_id = p.product_id AND pb.is_active), '[]'::json) AS barcodes,
+          COALESCE(stock.qty_on_hand, 0) AS qty_on_hand,
+          COALESCE((
+            SELECT json_agg(json_build_object(
+              'lot_id', lots.lot_id,
+              'lot_code', lots.lot_code,
+              'expiry_date', lots.expiry_date,
+              'qty_on_hand', lots.qty_on_hand
+            ) ORDER BY lots.expiry_date NULLS LAST, lots.lot_code)
+            FROM (
+              SELECT soh.lot_id, l.lot_code, l.expiry_date, SUM(soh.qty_on_hand) AS qty_on_hand
+              FROM inv.v_stock_on_hand_active soh
+              JOIN inv.lot l ON l.lot_id = soh.lot_id
+              WHERE soh.product_id = p.product_id
+                AND soh.location_id = $1
+                AND soh.qty_on_hand > 0
+              GROUP BY soh.lot_id, l.lot_code, l.expiry_date
+            ) lots
+          ), '[]'::json) AS lots
+        FROM inv.product p
+        CROSS JOIN (SELECT pos_pricing_mode FROM app.company_profile WHERE is_active = true ORDER BY created_at, company_id LIMIT 1) cp
+        LEFT JOIN sal.pos_product_price pp ON pp.product_id = p.product_id AND pp.is_active
+        LEFT JOIN stock ON stock.product_id = p.product_id
+          WHERE p.is_active = true
+          AND p.is_saleable = true
+          AND ($2 = '' OR p.sku ILIKE '%' || $2 || '%' OR p.product_name ILIKE '%' || $2 || '%' OR EXISTS (SELECT 1 FROM inv.product_barcode pb WHERE pb.product_id = p.product_id AND pb.is_active AND pb.barcode ILIKE '%' || $2 || '%'))
+        ORDER BY p.product_name
+        LIMIT 100;`,
+        [locationId, search]
+      );
+
+      return res.json({ success: true, location_id: locationId, count: result.rowCount, products: result.rows, data: result.rows });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: "Failed to load POS products.", error: error.message });
+    }
+  }
+);
+
+router.put(
+  "/prices/:productId",
+  requireAuth,
+  requirePosFeature,
+  requirePermission("EDIT_SETUP"),
+  async (req, res) => {
+    try {
+      const price = Number(req.body?.unit_price);
+      if (!Number.isFinite(price) || price < 0) return res.status(400).json({ success: false, message: "unit_price must be a non-negative number." });
+      const data = await savePosPrice(req.params.productId, price, req.user?.user_id);
+      return res.json({ success: true, data, price: data });
+    } catch (error) {
+      return res.status(400).json({ success: false, message: "Failed to save POS price.", error: error.message });
+    }
+  }
+);
+
+router.patch("/prices/:productId", requireAuth, requirePosFeature, requirePermission("EDIT_SETUP"), async (req, res) => {
+  try {
+    const price = Number(req.body?.unit_price);
+    if (!Number.isFinite(price) || price < 0) return res.status(400).json({ success: false, message: "unit_price must be a non-negative number." });
+    const data = await savePosPrice(req.params.productId, price, req.user?.user_id);
+    return res.json({ success: true, message: "POS price updated.", data, price: data });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: "Failed to update POS price.", error: error.message });
+  }
+});
+
+router.delete("/prices/:productId", requireAuth, requirePosFeature, requirePermission("EDIT_SETUP"), async (req, res) => {
+  try {
+    const result = await query(`
+      UPDATE sal.pos_product_price
+      SET is_active = false, updated_by = $2, updated_at = now()
+      WHERE product_id = $1
+      RETURNING product_id, unit_price, is_active, updated_at;`,
+      [req.params.productId, req.user?.user_id || null]);
+    if (!result.rowCount) return res.status(404).json({ success: false, message: "POS price not found." });
+    return res.json({ success: true, message: "POS price deactivated.", data: result.rows[0], price: result.rows[0] });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: "Failed to deactivate POS price.", error: error.message });
+  }
+});
+
+router.get("/barcodes", requireAuth, requirePosFeature, requireBarcodeFeature, requirePermission("VIEW_POS"), async (req, res) => {
+  try {
+    const search = String(req.query.q || "").trim();
+    const result = await query(`
+      SELECT pb.barcode_id, pb.barcode, pb.product_id, pb.uom_code, pb.qty_per_scan, pb.is_active,
+             p.sku, p.product_name
+      FROM inv.product_barcode pb
+      JOIN inv.product p ON p.product_id = pb.product_id
+      WHERE ($1 = '' OR pb.barcode ILIKE '%' || $1 || '%' OR p.sku ILIKE '%' || $1 || '%' OR p.product_name ILIKE '%' || $1 || '%')
+      ORDER BY p.product_name, pb.barcode;`, [search]);
+    return res.json({ success: true, count: result.rowCount, barcodes: result.rows, data: result.rows });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Failed to load product barcodes.", error: error.message });
+  }
+});
+
+router.post("/barcodes", requireAuth, requirePosFeature, requireBarcodeFeature, requirePermission("EDIT_SETUP"), async (req, res) => {
+  try {
+    const barcode = String(req.body?.barcode || "").trim();
+    const productId = req.body?.product_id;
+    const qtyPerScan = Number(req.body?.qty_per_scan || 1);
+    if (!productId || !barcode) return res.status(400).json({ success: false, message: "product_id and barcode are required." });
+    if (!Number.isFinite(qtyPerScan) || qtyPerScan <= 0) return res.status(400).json({ success: false, message: "qty_per_scan must be greater than zero." });
+    const result = await query(`INSERT INTO inv.product_barcode(product_id, barcode, uom_code, qty_per_scan) VALUES ($1, $2, $3, $4) RETURNING *;`, [productId, barcode, req.body?.uom_code || null, qtyPerScan]);
+    return res.status(201).json({ success: true, message: "Barcode assigned.", data: result.rows[0], barcode: result.rows[0] });
+  } catch (error) {
+    return res.status(error.code === "23505" ? 409 : 400).json({ success: false, message: error.code === "23505" ? "Barcode is already assigned." : "Failed to assign barcode.", error: error.message });
+  }
+});
+
+router.patch("/barcodes/:barcodeId", requireAuth, requirePosFeature, requireBarcodeFeature, requirePermission("EDIT_SETUP"), async (req, res) => {
+  try {
+    const barcode = String(req.body?.barcode || "").trim();
+    const result = await query(`UPDATE inv.product_barcode SET barcode = COALESCE(NULLIF($2, ''), barcode), uom_code = COALESCE($3, uom_code), qty_per_scan = COALESCE($4, qty_per_scan), is_active = COALESCE($5, is_active), updated_at = now() WHERE barcode_id = $1 RETURNING *;`, [req.params.barcodeId, barcode, req.body?.uom_code ?? null, req.body?.qty_per_scan ? Number(req.body.qty_per_scan) : null, req.body?.is_active]);
+    if (!result.rowCount) return res.status(404).json({ success: false, message: "Barcode not found." });
+    return res.json({ success: true, data: result.rows[0], barcode: result.rows[0] });
+  } catch (error) {
+    return res.status(error.code === "23505" ? 409 : 400).json({ success: false, message: error.code === "23505" ? "Barcode is already assigned." : "Failed to update barcode.", error: error.message });
+  }
+});
+
+router.delete("/barcodes/:barcodeId", requireAuth, requirePosFeature, requireBarcodeFeature, requirePermission("EDIT_SETUP"), async (req, res) => {
+  try {
+    const result = await query("UPDATE inv.product_barcode SET is_active = false, updated_at = now() WHERE barcode_id = $1 RETURNING *;", [req.params.barcodeId]);
+    if (!result.rowCount) return res.status(404).json({ success: false, message: "Barcode not found." });
+    return res.json({ success: true, data: result.rows[0], barcode: result.rows[0] });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: "Failed to deactivate barcode.", error: error.message });
+  }
+});
+
+router.post(
+  "/sales",
+  requireAuth,
+  requirePosFeature,
+  requirePermission("CREATE_POS_SALE"),
+  async (req, res) => {
+    const body = req.body || {};
+    const lines = Array.isArray(body.lines) ? body.lines : [];
+    const saleOverrideReason = String(body.price_override_reason || "").trim();
+    const method = normalizePaymentMethod(body.payment_method);
+    const idempotencyKey = String(body.idempotency_key || "").trim();
+
+    if (!lines.length) return res.status(400).json({ success: false, message: "At least one POS line is required." });
+    if (!idempotencyKey) return res.status(400).json({ success: false, message: "idempotency_key is required." });
+    if (!["CASH", "BANK", "BANK_TRANSFER", "MOBILE_MONEY", "CARD", "CREDIT"].includes(method)) return res.status(400).json({ success: false, message: "payment_method must be CASH, BANK_TRANSFER, MOBILE_MONEY, CARD, or CREDIT." });
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await setDatabaseUserContext(client, req);
+
+      const existing = await client.query("SELECT pos_sale_id FROM sal.pos_sale WHERE idempotency_key = $1 FOR UPDATE;", [idempotencyKey]);
+      if (existing.rowCount) {
+        await client.query("COMMIT");
+        const sale = await loadSaleById(existing.rows[0].pos_sale_id);
+        return res.status(200).json({ success: true, duplicate: true, message: "POS request already processed.", sale });
+      }
+
+      const locationId = await resolveLocationId(body.location_id || null);
+      if (!locationId) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ success: false, message: "An active POS location is required." });
+      }
+
+      const customerId = body.customer_id || null;
+      if (method === "CREDIT" && !customerId) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ success: false, message: "Customer is required for CREDIT POS sales; walk-in credit is not permitted." });
+      }
+      if (customerId) {
+        const customer = await client.query("SELECT 1 FROM app.party WHERE party_id = $1 AND party_type IN ('CUSTOMER', 'BOTH') AND is_active = true;", [customerId]);
+        if (!customer.rowCount) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ success: false, message: "Selected customer is not an active customer." });
+        }
+      }
+
+      const productIds = lines.map((line) => line.product_id);
+      const pricingMode = await getPricingMode();
+      const products = await client.query(`
+        SELECT p.product_id, p.product_name, p.is_active, p.is_saleable, p.is_stock_item, p.track_lots,
+               pp.unit_price
+        FROM inv.product p
+        LEFT JOIN sal.pos_product_price pp ON pp.product_id = p.product_id AND pp.is_active
+        WHERE p.product_id = ANY($1::uuid[]);`, [productIds]);
+      const productMap = new Map(products.rows.map((row) => [row.product_id, row]));
+      const seen = new Set();
+      let subtotal = 0;
+      for (const line of lines) {
+        const product = productMap.get(line.product_id);
+        const qty = Number(line.qty);
+        const key = `${line.product_id}:${line.lot_id || ""}`;
+        if (seen.has(key)) throw new Error("Duplicate POS product/lot lines are not allowed.");
+        seen.add(key);
+        if (!product || !product.is_active || !product.is_saleable) throw new Error("Product is not active and saleable.");
+        if (!Number.isFinite(qty) || qty <= 0) throw new Error(`Invalid quantity for ${product.product_name}.`);
+        const configuredPrice = product.unit_price === null || product.unit_price === undefined ? null : Number(product.unit_price);
+        const submittedPrice = line.unit_price === undefined || line.unit_price === null || line.unit_price === "" ? null : Number(line.unit_price);
+        let unitPrice = configuredPrice;
+        let priceSource = "CONFIGURED";
+        if (pricingMode === "MANUAL") {
+          if (!hasAction(req, "ENTER_POS_PRICE")) throw new Error("You do not have permission to enter POS prices.");
+          if (!Number.isFinite(submittedPrice) || submittedPrice < 0) throw new Error(`A valid selling price is required for ${product.product_name}.`);
+          unitPrice = submittedPrice;
+          priceSource = "MANUAL";
+        } else if (pricingMode === "FIXED" && submittedPrice !== null && configuredPrice !== null && submittedPrice !== configuredPrice) {
+          throw new Error(`Submitted price does not match the configured POS price for ${product.product_name}.`);
+        } else if (pricingMode === "HYBRID" && submittedPrice !== null && configuredPrice !== null && submittedPrice !== configuredPrice) {
+          if (!hasAction(req, "OVERRIDE_POS_PRICE")) throw new Error("You do not have permission to override POS prices.");
+          const overrideReason = String(line.price_override_reason || saleOverrideReason).trim();
+          if (!overrideReason) throw new Error(`An override reason is required for ${product.product_name}.`);
+          unitPrice = submittedPrice;
+          priceSource = "OVERRIDE";
+          line._overrideReason = overrideReason;
+        } else if (pricingMode === "HYBRID" && submittedPrice !== null && configuredPrice === null) {
+          if (!hasAction(req, "ENTER_POS_PRICE")) throw new Error("You do not have permission to enter POS prices.");
+          unitPrice = submittedPrice;
+          priceSource = "MANUAL";
+        } else if (pricingMode === "FIXED" && configuredPrice === null) {
+          throw new Error(`No active POS price is configured for ${product.product_name}.`);
+        }
+        if (unitPrice === null || !Number.isFinite(unitPrice) || unitPrice < 0) throw new Error(`No valid POS price is configured for ${product.product_name}.`);
+        if (product.track_lots && !line.lot_id) throw new Error(`A lot is required for ${product.product_name}.`);
+        line._unitPrice = unitPrice;
+        line._priceSource = priceSource;
+        line._referencePrice = configuredPrice;
+        subtotal += qty * unitPrice;
+      }
+      subtotal = Number(subtotal.toFixed(2));
+      const tendered = body.amount_tendered === null || body.amount_tendered === undefined || body.amount_tendered === ""
+        ? (method === "CASH" ? null : method === "CREDIT" ? null : subtotal)
+        : Number(body.amount_tendered);
+      if (method === "CASH" && (!Number.isFinite(tendered) || tendered < subtotal)) throw new Error("Cash tendered cannot be less than the sale total.");
+
+      const saleResult = await client.query(`
+        INSERT INTO sal.pos_sale (
+          sale_no, transaction_date, location_id, customer_id, payment_method,
+          amount_tendered, change_amount, subtotal, total_amount, status,
+          idempotency_key, created_by, due_date
+        )
+        VALUES (sal.next_pos_sale_no(), current_date, $1, $2, $3, $4, $5, $6, $6, 'DRAFT', $7, $8, $9)
+        RETURNING pos_sale_id;`,
+        [locationId, customerId, method, tendered, method === "CASH" ? Number((tendered - subtotal).toFixed(2)) : 0, subtotal, idempotencyKey, req.user?.user_id || null, method === "CREDIT" ? (body.due_date || null) : null]
+      );
+      const saleId = saleResult.rows[0].pos_sale_id;
+      for (const line of lines) {
+        const product = productMap.get(line.product_id);
+        const qty = Number(line.qty);
+        const unitPrice = Number(line._unitPrice);
+        await client.query(`
+          INSERT INTO sal.pos_sale_line(pos_sale_id, product_id, qty, unit_price, line_total, lot_id, reference_price, price_source, price_override_reason)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);`,
+          [saleId, line.product_id, qty, unitPrice, Number((qty * unitPrice).toFixed(2)), line.lot_id || null, line._referencePrice, line._priceSource, line._overrideReason || null]
+        );
+      }
+      await client.query("SELECT sal.post_pos_sale($1::uuid);", [saleId]);
+      await client.query("COMMIT");
+      const sale = await loadSaleById(saleId);
+      return res.status(201).json({ success: true, message: "POS sale completed.", sale, receipt: sale });
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      if (error.code === "23505" && idempotencyKey) return res.status(200).json({ success: true, duplicate: true, message: "POS request already processed." });
+      return res.status(400).json({ success: false, message: error.message || "Failed to complete POS sale.", error: error.message });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+router.get("/sales/by-no/:saleNo", requireAuth, requirePosFeature, requirePermission("VIEW_POS"), async (req, res) => {
+  try {
+    const result = await query("SELECT pos_sale_id FROM sal.pos_sale WHERE sale_no = $1;", [req.params.saleNo]);
+    if (!result.rowCount) return res.status(404).json({ success: false, message: "POS sale not found." });
+    const sale = await loadSaleById(result.rows[0].pos_sale_id);
+    return res.json({ success: true, sale, data: sale, receipt: sale });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Failed to load POS sale.", error: error.message });
+  }
+});
+
+router.get("/sales/:saleId", requireAuth, requirePosFeature, requirePermission("VIEW_POS"), async (req, res) => {
+  try {
+    const sale = await loadSaleById(req.params.saleId);
+    if (!sale) return res.status(404).json({ success: false, message: "POS sale not found." });
+    return res.json({ success: true, sale, data: sale, receipt: sale });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Failed to load POS sale.", error: error.message });
+  }
+});
+
+router.post("/sales/:saleId/void", requireAuth, requirePosFeature, requirePermission("VOID_POS_SALE"), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const reason = String(req.body?.reason || "").trim();
+    if (!reason) return res.status(400).json({ success: false, message: "A void reason is required." });
+    await client.query("BEGIN");
+    await setDatabaseUserContext(client, req);
+    await client.query("SELECT sal.void_pos_sale($1::uuid, $2::text);", [req.params.saleId, reason]);
+    await client.query("COMMIT");
+    const sale = await loadSaleById(req.params.saleId);
+    return res.json({ success: true, message: "POS sale voided with reversal entries.", sale, data: sale });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    return res.status(400).json({ success: false, message: error.message || "Failed to void POS sale.", error: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+export default router;

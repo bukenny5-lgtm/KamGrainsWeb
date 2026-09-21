@@ -97,27 +97,22 @@ router.get("/customer-weekly-performance", requireAuth, async (req, res) => {
     SELECT
         c.party_id,
         c.party_name,
-        COUNT(DISTINCT d.delivery_id) AS orders_count,
-        COALESCE(SUM(
-            COALESCE(dl.sell_qty, dl.qty, 0)
-        ), 0) AS total_kg_purchased,
-        COALESCE(SUM(
-            COALESCE(dl.sell_qty, dl.qty, 0) * COALESCE(dl.unit_price, 0)
-        ), 0) AS total_revenue,
-        MAX(d.transaction_date) AS last_purchase_date
+        COALESCE(s.orders_count, 0) AS orders_count,
+        COALESCE(s.total_kg_purchased, 0) AS total_kg_purchased,
+        COALESCE(s.total_revenue, 0) AS total_revenue,
+        s.last_purchase_date
     FROM app.party c
-    LEFT JOIN sal.sales_order so
-        ON so.customer_id = c.party_id
-       AND DATE(so.created_at) BETWEEN $1::DATE AND $2::DATE
-    LEFT JOIN sal.delivery d
-        ON d.so_id = so.so_id
-       AND DATE(d.transaction_date) BETWEEN $1::DATE AND $2::DATE
-    LEFT JOIN sal.delivery_line dl
-        ON dl.delivery_id = d.delivery_id
+    LEFT JOIN (
+        SELECT customer_id,
+               COUNT(DISTINCT event_id) AS orders_count,
+               SUM(qty) AS total_kg_purchased,
+               SUM(revenue) AS total_revenue,
+               MAX(event_date) AS last_purchase_date
+        FROM reporting.v_sales_event_lines
+        WHERE customer_id IS NOT NULL AND event_date BETWEEN $1::DATE AND $2::DATE
+        GROUP BY customer_id
+    ) s ON s.customer_id = c.party_id
     WHERE c.party_type = 'CUSTOMER'
-    GROUP BY
-        c.party_id,
-        c.party_name
 ),
       customer_summary AS (
     SELECT
@@ -218,7 +213,7 @@ router.get("/dormant-customers", requireAuth, async (req, res) => {
 
     FROM app.party c
     WHERE c.party_type = 'CUSTOMER'
-)
+),
       dormant_status AS (
         SELECT
           party_id,
@@ -311,7 +306,7 @@ router.get("/customer-rfm", requireAuth, async (req, res) => {
 
     FROM app.party c
     WHERE c.party_type = 'CUSTOMER'
-)
+),
       segmented AS (
         SELECT
           party_id,
@@ -320,7 +315,6 @@ router.get("/customer-rfm", requireAuth, async (req, res) => {
           COALESCE(frequency, 0) AS frequency,
           COALESCE(monetary, 0) AS monetary,
           CASE
-            CASE
     /* Frequent purchaser with high weekly spend */
     WHEN frequency >= 5
          AND monetary >= 100000
@@ -404,26 +398,22 @@ router.get("/weekly-sales-by-product", requireAuth, async (req, res) => {
         p.product_id,
         p.product_name,
         p.sku,
-        COALESCE(SUM(COALESCE(dl.sell_qty, dl.qty, 0)), 0) AS kg_sold,
-        COALESCE(SUM(COALESCE(dl.sell_qty, dl.qty, 0) * COALESCE(dl.unit_price, 0)), 0) AS revenue,
+        COALESCE(SUM(s.qty), 0) AS kg_sold,
+        COALESCE(SUM(s.revenue), 0) AS revenue,
         CASE
-          WHEN COALESCE(SUM(COALESCE(dl.sell_qty, dl.qty, 0)), 0) > 0
-          THEN COALESCE(SUM(COALESCE(dl.sell_qty, dl.qty, 0) * COALESCE(dl.unit_price, 0)), 0) /
-               COALESCE(SUM(COALESCE(dl.sell_qty, dl.qty, 0)), 1)
+          WHEN COALESCE(SUM(s.qty), 0) > 0
+          THEN COALESCE(SUM(s.revenue), 0) / COALESCE(SUM(s.qty), 1)
           ELSE 0
         END AS average_selling_price,
-        COUNT(DISTINCT d.delivery_id) AS orders_count,
-        COUNT(DISTINCT d.customer_id) AS customers_count
+        COUNT(DISTINCT s.event_id) AS orders_count,
+        COUNT(DISTINCT s.customer_id) AS customers_count
       FROM inv.product p
-      LEFT JOIN sal.delivery d
-  ON DATE(d.transaction_date) BETWEEN $1::DATE AND $2::DATE
-
-     LEFT JOIN sal.delivery_line dl
-  ON dl.delivery_id = d.delivery_id
- AND dl.product_id = p.product_id
+        LEFT JOIN reporting.v_sales_event_lines s
+          ON s.product_id = p.product_id
+         AND s.event_date BETWEEN $1::DATE AND $2::DATE
       WHERE p.product_type IN ('FINISHED','RAW') AND p.is_active = true
       GROUP BY p.product_id, p.product_name, p.sku
-      HAVING COALESCE(SUM(COALESCE(dl.sell_qty, dl.qty, 0)), 0) > 0
+        HAVING COALESCE(SUM(s.qty), 0) > 0
       ORDER BY revenue DESC, p.product_name;
     `, [week_start, week_end]);
 
@@ -537,53 +527,29 @@ router.get("/weekly-profit-by-product", requireAuth, async (req, res) => {
           p.product_id,
           p.product_name,
           p.sku,
-          COALESCE(SUM(
-            CASE WHEN DATE(d.transaction_date) BETWEEN $1::DATE AND $2::DATE
-                 THEN COALESCE(dl.sell_qty, dl.qty, 0) * COALESCE(dl.unit_price, 0)
-                 ELSE 0 END
-          ), 0) AS revenue,
-          COALESCE(SUM(
-            CASE WHEN DATE(d.transaction_date) BETWEEN $1::DATE AND $2::DATE
-                 THEN COALESCE(dl.sell_qty, dl.qty, 0)
-                 ELSE 0 END
-          ), 0) AS qty_sold
+          COALESCE(SUM(s.revenue), 0) AS revenue,
+          COALESCE(SUM(s.qty), 0) AS qty_sold,
+          COALESCE(SUM(s.cogs), 0) AS cogs
         FROM inv.product p
-
-LEFT JOIN sal.delivery d
-  ON DATE(d.transaction_date) BETWEEN $1::DATE AND $2::DATE
-
-LEFT JOIN sal.delivery_line dl
-  ON dl.delivery_id = d.delivery_id
- AND dl.product_id = p.product_id
+        LEFT JOIN reporting.v_sales_event_lines s
+          ON s.product_id = p.product_id
+         AND s.event_date BETWEEN $1::DATE AND $2::DATE
         WHERE p.product_type IN ('FINISHED','RAW') AND p.is_active = true
         GROUP BY p.product_id, p.product_name, p.sku
-      ),
-      cogs_data AS (
-        SELECT
-          sml.product_id,
-          COALESCE(SUM(sml.qty * sml.unit_cost), 0) AS cogs
-        FROM sal.delivery d
-        JOIN inv.stock_movement sm
-          ON sm.movement_id = d.posted_movement_id
-        JOIN inv.stock_movement_line sml
-          ON sml.movement_id = sm.movement_id
-        WHERE DATE(d.transaction_date) BETWEEN $1::DATE AND $2::DATE
-        GROUP BY sml.product_id
       )
       SELECT
         s.product_id,
         s.product_name,
         s.sku,
         s.revenue,
-        COALESCE(c.cogs, 0) AS cogs,
-        s.revenue - COALESCE(c.cogs, 0) AS gross_profit,
+        s.cogs AS cogs,
+        s.revenue - s.cogs AS gross_profit,
         CASE
           WHEN s.revenue > 0
-          THEN ROUND(((s.revenue - COALESCE(c.cogs, 0)) / s.revenue) * 100, 2)
+          THEN ROUND(((s.revenue - s.cogs) / s.revenue) * 100, 2)
           ELSE 0
         END AS gross_margin_pct
       FROM sales_data s
-      LEFT JOIN cogs_data c ON c.product_id = s.product_id
       WHERE s.revenue > 0
       ORDER BY s.revenue DESC, s.product_name;
     `, [week_start, week_end]);
@@ -614,13 +580,11 @@ router.get("/weekly-management-summary", requireAuth, async (req, res) => {
     const result = await query(`
       WITH weekly_sales AS (
         SELECT
-          COALESCE(SUM(COALESCE(dl.sell_qty, dl.qty, 0) * COALESCE(dl.unit_price, 0)), 0) AS total_revenue,
-          COUNT(DISTINCT so.so_id) AS total_orders,
-          COUNT(DISTINCT d.customer_id) AS total_customers
-        FROM sal.sales_order so
-        LEFT JOIN sal.delivery d ON d.so_id = so.so_id AND DATE(d.transaction_date) BETWEEN $1::DATE AND $2::DATE
-        LEFT JOIN sal.delivery_line dl ON dl.delivery_id = d.delivery_id
-        WHERE DATE(so.created_at) BETWEEN $1::DATE AND $2::DATE
+          COALESCE(SUM(revenue), 0) AS total_revenue,
+          COUNT(DISTINCT event_id) AS total_orders,
+          COUNT(DISTINCT customer_id) AS total_customers
+        FROM reporting.v_sales_event_lines
+        WHERE event_date BETWEEN $1::DATE AND $2::DATE
       ),
       weekly_purchases AS (
         SELECT
@@ -630,14 +594,9 @@ router.get("/weekly-management-summary", requireAuth, async (req, res) => {
         WHERE DATE(api.transaction_date) BETWEEN $1::DATE AND $2::DATE
       ),
       weekly_cogs AS (
-        SELECT
-          COALESCE(SUM(sml.qty * sml.unit_cost), 0) AS total_cogs
-        FROM sal.delivery d
-        JOIN inv.stock_movement sm
-          ON sm.movement_id = d.posted_movement_id
-        JOIN inv.stock_movement_line sml
-          ON sml.movement_id = sm.movement_id
-        WHERE DATE(d.transaction_date) BETWEEN $1::DATE AND $2::DATE
+        SELECT COALESCE(SUM(cogs), 0) AS total_cogs
+        FROM reporting.v_sales_event_lines
+        WHERE event_date BETWEEN $1::DATE AND $2::DATE
       ),
       new_customers AS (
         SELECT COUNT(DISTINCT customer_id) AS new_count
@@ -662,10 +621,9 @@ router.get("/weekly-management-summary", requireAuth, async (req, res) => {
       top_customer_data AS (
         SELECT
           c.party_name,
-          COALESCE(SUM(COALESCE(dl.sell_qty, dl.qty, 0) * COALESCE(dl.unit_price, 0)), 0) AS revenue
+          COALESCE(SUM(s.revenue), 0) AS revenue
         FROM app.party c
-        LEFT JOIN sal.delivery d ON d.customer_id = c.party_id AND DATE(d.transaction_date) BETWEEN $1::DATE AND $2::DATE
-        LEFT JOIN sal.delivery_line dl ON dl.delivery_id = d.delivery_id
+        LEFT JOIN reporting.v_sales_event_lines s ON s.customer_id = c.party_id AND s.event_date BETWEEN $1::DATE AND $2::DATE
         WHERE c.party_type = 'CUSTOMER'
         GROUP BY c.party_id, c.party_name
         ORDER BY revenue DESC
@@ -674,14 +632,9 @@ router.get("/weekly-management-summary", requireAuth, async (req, res) => {
       top_product_data AS (
         SELECT
           p.product_name,
-          COALESCE(SUM(
-            CASE WHEN DATE(d.transaction_date) BETWEEN $1::DATE AND $2::DATE
-                 THEN COALESCE(dl.sell_qty, dl.qty, 0) * COALESCE(dl.unit_price, 0)
-                 ELSE 0 END
-          ), 0) AS revenue
+          COALESCE(SUM(s.revenue), 0) AS revenue
         FROM inv.product p
-        LEFT JOIN sal.delivery_line dl ON dl.product_id = p.product_id
-        LEFT JOIN sal.delivery d ON d.delivery_id = dl.delivery_id AND DATE(d.transaction_date) BETWEEN $1::DATE AND $2::DATE
+        LEFT JOIN reporting.v_sales_event_lines s ON s.product_id = p.product_id AND s.event_date BETWEEN $1::DATE AND $2::DATE
         WHERE p.product_type IN ('FINISHED','RAW') AND p.is_active = true
         GROUP BY p.product_id, p.product_name
         ORDER BY revenue DESC
@@ -733,25 +686,12 @@ router.get("/customer-concentration", requireAuth, async (req, res) => {
         SELECT
           c.party_id,
           c.party_name,
-          COALESCE(SUM(
-            CASE WHEN DATE(d.transaction_date) BETWEEN $1::DATE AND $2::DATE
-                 THEN COALESCE(dl.sell_qty, dl.qty, 0) * COALESCE(dl.unit_price, 0)
-                 ELSE 0 END
-          ), 0) AS revenue,
-          COALESCE(SUM(
-            CASE WHEN DATE(d.transaction_date) BETWEEN $1::DATE AND $2::DATE
-                 THEN COALESCE(dl.sell_qty, dl.qty, 0)
-                 ELSE 0 END
-          ), 0) AS kg_purchased,
-          COUNT(DISTINCT d.delivery_id) AS orders_count,
-          ROW_NUMBER() OVER (ORDER BY COALESCE(SUM(
-            CASE WHEN DATE(d.transaction_date) BETWEEN $1::DATE AND $2::DATE
-                 THEN COALESCE(dl.sell_qty, dl.qty, 0) * COALESCE(dl.unit_price, 0)
-                 ELSE 0 END
-          ), 0) DESC) AS rank
+          COALESCE(SUM(s.revenue), 0) AS revenue,
+          COALESCE(SUM(s.qty), 0) AS kg_purchased,
+          COUNT(DISTINCT s.event_id) AS orders_count,
+          ROW_NUMBER() OVER (ORDER BY COALESCE(SUM(s.revenue), 0) DESC) AS rank
         FROM app.party c
-        LEFT JOIN sal.delivery d ON d.customer_id = c.party_id AND DATE(d.transaction_date) BETWEEN $1::DATE AND $2::DATE
-        LEFT JOIN sal.delivery_line dl ON dl.delivery_id = d.delivery_id
+        LEFT JOIN reporting.v_sales_event_lines s ON s.customer_id = c.party_id AND s.event_date BETWEEN $1::DATE AND $2::DATE
         WHERE c.party_type = 'CUSTOMER'
         GROUP BY c.party_id,c.party_name
       ),

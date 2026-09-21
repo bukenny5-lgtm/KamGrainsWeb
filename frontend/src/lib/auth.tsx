@@ -257,7 +257,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   function hasRole(roles: string[]) {
     if (!user) return false;
 
-    const userRoles = user.roles.map((role) =>
+    const userRoles = (Array.isArray(user.roles) ? user.roles : []).map((role) =>
       String(role.role_code).toUpperCase()
     );
 

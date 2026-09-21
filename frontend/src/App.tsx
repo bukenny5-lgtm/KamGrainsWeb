@@ -34,6 +34,8 @@ import AccruedExpenses from "@/pages/AccruedExpenses";
 import StockAdjustments from "@/pages/StockAdjustments";
 import ApiPaymentChannels from "@/pages/ApiPaymentChannels";
 import Reconciliations from "@/pages/Reconciliations";
+import PosQuickSale from "@/pages/PosQuickSale";
+import CustomerReturns from "@/pages/CustomerReturns";
 
 const router = createBrowserRouter([
   {
@@ -113,6 +115,14 @@ const router = createBrowserRouter([
         ),
       },
       {
+        path: "pos",
+        element: (
+          <ProtectedRoute feature="pos" allowedRoles={roleList(ROLE_GROUPS.POS_ACCESS)}>
+            <PosQuickSale />
+          </ProtectedRoute>
+        ),
+      },
+      {
         path: "deliveries",
         element: (
           <ProtectedRoute feature="sales" allowedRoles={roleList(ROLE_GROUPS.SALES_ACCESS)}>
@@ -125,6 +135,14 @@ const router = createBrowserRouter([
         element: (
           <ProtectedRoute feature="sales" allowedRoles={roleList(ROLE_GROUPS.SALES_ACCESS)}>
             <ArInvoices />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "customer-returns",
+        element: (
+          <ProtectedRoute feature="sales" allowedRoles={roleList(ROLE_GROUPS.SALES_ACCESS)}>
+            <CustomerReturns />
           </ProtectedRoute>
         ),
       },

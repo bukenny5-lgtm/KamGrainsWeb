@@ -61,7 +61,7 @@ import type {
  */
 
 export const api = axios.create({
-  baseURL: "http://localhost:3000/api",
+  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api",
   timeout: 15000,
 });
 
@@ -264,6 +264,136 @@ export async function deleteUom(uomCode: string) {
 
 export async function getProducts() {
   const response = await api.get("/products");
+  return response.data;
+}
+
+export async function getPosProducts(params: { q?: string; location_id?: string } = {}) {
+  const response = await api.get("/pos/products", { params });
+  return response.data;
+}
+
+export async function getPosPrices(params: { q?: string } = {}) {
+  const response = await api.get("/pos/prices", { params });
+  return response.data;
+}
+
+export async function getPosPrice(productId: string) {
+  const response = await api.get(`/pos/prices/${encode(productId)}`);
+  return response.data;
+}
+
+export async function createPosPrice(payload: { product_id: string; unit_price: number }) {
+  const response = await api.post("/pos/prices", payload);
+  return response.data;
+}
+
+export async function updatePosPrice(productId: string, payload: { unit_price: number }) {
+  const response = await api.patch(`/pos/prices/${encode(productId)}`, payload);
+  return response.data;
+}
+
+export async function deactivatePosPrice(productId: string) {
+  const response = await api.delete(`/pos/prices/${encode(productId)}`);
+  return response.data;
+}
+
+export async function getPosBarcodes(params: { q?: string } = {}) {
+  const response = await api.get("/pos/barcodes", { params });
+  return response.data;
+}
+
+export async function createPosBarcode(payload: { product_id: string; barcode: string; uom_code?: string | null; qty_per_scan?: number }) {
+  const response = await api.post("/pos/barcodes", payload);
+  return response.data;
+}
+
+export async function updatePosBarcode(barcodeId: string, payload: { barcode?: string; uom_code?: string | null; qty_per_scan?: number; is_active?: boolean }) {
+  const response = await api.patch(`/pos/barcodes/${encode(barcodeId)}`, payload);
+  return response.data;
+}
+
+export async function deactivatePosBarcode(barcodeId: string) {
+  const response = await api.delete(`/pos/barcodes/${encode(barcodeId)}`);
+  return response.data;
+}
+
+export async function createPosSale(payload: unknown) {
+  const response = await api.post("/pos/sales", payload);
+  return response.data;
+}
+
+export async function getPosSale(saleId: string) {
+  const response = await api.get(`/pos/sales/${encode(saleId)}`);
+  return response.data;
+}
+
+export async function getPosSaleByNo(saleNo: string) {
+  const response = await api.get(`/pos/sales/by-no/${encode(saleNo)}`);
+  return response.data;
+}
+
+export async function voidPosSale(saleId: string, reason: string) {
+  const response = await api.post(`/pos/sales/${encode(saleId)}/void`, { reason });
+  return response.data;
+}
+
+export async function getCustomerReturnSource(sourceType: "POS" | "DELIVERY", sourceId: string) {
+  const response = await api.get(`/customer-returns/source/${sourceType}/${encode(sourceId)}`);
+  return response.data;
+}
+
+export async function getCustomerReturns(params: Record<string, string> = {}) {
+  const response = await api.get("/customer-returns", { params });
+  return response.data;
+}
+
+export async function getCustomerReturnSummary() {
+  const response = await api.get("/customer-returns/summary");
+  return response.data;
+}
+
+export async function getCustomerReturn(returnId: string) {
+  const response = await api.get(`/customer-returns/${encode(returnId)}`);
+  return response.data;
+}
+
+export async function getCustomerReturnRefunds(returnId: string) {
+  const response = await api.get(`/customer-returns/${encode(returnId)}/refunds`);
+  return response.data;
+}
+
+export async function createCustomerReturn(payload: unknown) {
+  const response = await api.post("/customer-returns", payload);
+  return response.data;
+}
+
+export async function postCustomerReturn(returnId: string) {
+  const response = await api.post(`/customer-returns/${encode(returnId)}/post`);
+  return response.data;
+}
+
+export async function getCustomerReturnNote(returnId: string) {
+  const response = await api.get(`/customer-returns/${encode(returnId)}/note`);
+  return response.data;
+}
+
+export async function getReturnPolicy() {
+  const response = await api.get("/return-policy");
+  return response.data;
+}
+
+export async function updateReturnPolicy(payload: Record<string, unknown>) {
+  const response = await api.patch("/return-policy", payload);
+  return response.data;
+}
+
+export async function settleCustomerReturnRefund(returnId: string, payload: Record<string, unknown>) {
+  const response = await api.post(`/customer-returns/${encode(returnId)}/refund`, payload);
+  return response.data;
+}
+
+export async function voidCustomerReturn(returnId: string, reason: string) {
+  const response = await api.post(`/customer-returns/${encode(returnId)}/void`, { reason });
   return response.data;
 }
 

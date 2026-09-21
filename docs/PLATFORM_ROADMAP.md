@@ -23,7 +23,7 @@ POS / Quick Sale will coexist with the existing Sales Order workflow. The primar
 | 1 | Universal Business Configuration / Universal Branding | PLANNED |
 | 2 | Universal Product Model | PLANNED |
 | 3 | Feature Flags / Business Profiles | PLANNED |
-| 4 | Quick Sale / POS Foundation | PLANNED |
+| 4 | Quick Sale / POS Foundation | IN PROGRESS — RUNTIME/UI APPROVAL PENDING |
 | 5 | Cash Register / Till Sessions | PLANNED |
 | 6 | Barcode Scanning | PLANNED |
 | 7 | Beverage Units / Packaging | PLANNED |
@@ -40,11 +40,31 @@ POS / Quick Sale will coexist with the existing Sales Order workflow. The primar
 | 18 | Subscription Expiry Controls | PLANNED |
 | 19 | Industry Profiles | PLANNED |
 | 20 | Returns / Refunds / Exchanges | PLANNED |
+
+### Phase 19A — Return Policy / Refund / Quarantine Foundation (2026-09-20)
+
+Development-only foundation added for configurable return policy, customer-return reasons and conditions, non-saleable quarantine inventory, refund settlement records, Return Note data/print action, policy enforcement, and quarantine visibility. Monetary refund/AR settlement, return voiding, release/write-off, delivery runtime validation, and UI approval remain required before production.
+
+### Phase 19B — Return Settlement and Reversal (2026-09-20)
+
+Development-only forward migration adds capped AR credit adjustments, configured refund-payable accounting, partial/final refund settlement, refund documents, and posted-return reversal with refund-after-settlement protection. Delivery/KAM runtime, reporting/dashboard/cache validation, print layout approval, and production approval remain pending.
+
+### Phase 19C — Final Runtime/UI Acceptance (2026-09-20)
+
+Database/static acceptance passed for safe WRITE_OFF blocking and settlement/reversal foundations. Authenticated browser acceptance remains blocked by a blank local Vite frontend surface; no production approval is claimed.
 | 21 | Promotions / Discounts | PLANNED |
 | 22 | Advanced Beverage Features | PLANNED |
 | 23 | Spare Parts Extension | PLANNED |
 | 24 | Platform Administration Portal | PLANNED |
 | 25 | SaaS Deployment / Operations | PLANNED |
+
+### Phase 4 Step 1 — Quick Sale / POS Foundation Inspection (2026-09-18)
+
+Architecture and design-gap inspection is complete. The recommended direction is a dedicated, feature-gated POS sale path sharing inventory/accounting primitives while preserving the existing Sales Order → Delivery → AR Invoice → Receipt workflow. Implementation, migration, and approval remain pending. See `docs/PHASE4_POS_INSPECTION.md`.
+
+### Phase 4 Step 2 — Minimal POS Foundation (2026-09-18)
+
+The minimal online POS foundation is implemented in the working tree and development database. Final integration now includes POS credit receivables through AR open items, FIXED/MANUAL/HYBRID pricing controls, explicit payment methods, barcode administration and keyboard-wedge lookup, and scoped stock-cache refresh. Barcode was intentionally brought forward from the former Phase 6 position. Runtime/API and authenticated browser approval remain required before Phase 4 is marked complete.
 
 ## Phase 0 Scope
 
@@ -94,3 +114,11 @@ Production deployment must not proceed without a known rollback path.
 - Database-per-business multi-tenancy is a later platform capability.
 - Subscription plans, expiry controls, and SaaS operations are later phases.
 
+## Phase 19 — Universal Customer Returns
+
+- **Development implementation:** Added shared POS/delivery return schema, controlled posting, exact historical cost reuse, RESTOCK/DAMAGED disposition, API, permissions, frontend page, reporting event integration, and POS-linked AR void safety.
+- **Approval state:** Runtime transaction matrix and authenticated browser/UI validation remain required. Production untouched.
+
+### Phase 19D — Frontend Recovery and Final Acceptance (2026-09-20)
+
+The blank authenticated shell was corrected by hardening the role guard. Dashboard, Setup, and Customer Returns now render in the existing session. Full financial UI acceptance remains blocked until the browser session and current backend share one origin.

@@ -58,6 +58,7 @@ router.get("/", async (req, res) => {
         ai.delivery_id,
         d.delivery_no,
         so.so_no,
+        ps.sale_no AS pos_sale_no,
         ai.invoice_date,
         ai.due_date,
         ai.status,
@@ -83,6 +84,8 @@ router.get("/", async (req, res) => {
         ON d.delivery_id = ai.delivery_id
       LEFT JOIN sal.sales_order so
         ON so.so_id = d.so_id
+      LEFT JOIN sal.pos_sale ps
+        ON ps.credit_ar_invoice_id = ai.ar_invoice_id
       LEFT JOIN fin.gl_journal gj_post
         ON gj_post.journal_id = ai.posted_journal_id
       LEFT JOIN fin.gl_journal gj_rev
@@ -97,6 +100,7 @@ router.get("/", async (req, res) => {
         ai.delivery_id,
         d.delivery_no,
         so.so_no,
+        ps.sale_no AS pos_sale_no,
         ai.invoice_date,
         ai.due_date,
         ai.status,
@@ -146,6 +150,7 @@ router.get("/reports/summary", async (req, res) => {
         ai.delivery_id,
         d.delivery_no,
         so.so_no,
+        ps.sale_no AS pos_sale_no,
         ai.invoice_date,
         ai.due_date,
         ai.status,
@@ -178,6 +183,8 @@ router.get("/reports/summary", async (req, res) => {
         ON d.delivery_id = ai.delivery_id
       LEFT JOIN sal.sales_order so
         ON so.so_id = d.so_id
+      LEFT JOIN sal.pos_sale ps
+        ON ps.credit_ar_invoice_id = ai.ar_invoice_id
       LEFT JOIN fin.gl_journal gj_post
         ON gj_post.journal_id = ai.posted_journal_id
       LEFT JOIN fin.gl_journal gj_rev
@@ -201,6 +208,7 @@ router.get("/reports/summary", async (req, res) => {
         ai.delivery_id,
         d.delivery_no,
         so.so_no,
+        ps.sale_no,
         ai.invoice_date,
         ai.due_date,
         ai.status,
@@ -670,6 +678,8 @@ router.get("/:invoiceId", async (req, res) => {
         ON it.ar_invoice_id = ai.ar_invoice_id
       LEFT JOIN paid_total pt
         ON pt.ar_invoice_id = ai.ar_invoice_id
+      LEFT JOIN sal.pos_sale ps
+        ON ps.credit_ar_invoice_id = ai.ar_invoice_id
       WHERE ai.ar_invoice_id = $1;
       `,
       [invoiceId]
@@ -1032,6 +1042,21 @@ router.post(
          return res.status(401).json({
            success: false,
            message: "Authenticated user is required to void an invoice."
+         });
+       }
+
+       const posOrigin = await query(
+         `SELECT ps.sale_no
+            FROM sal.ar_invoice ai
+            JOIN sal.pos_sale ps ON ps.credit_ar_invoice_id = ai.ar_invoice_id
+           WHERE ai.invoice_no = $1`,
+         [invoiceNo]
+       );
+       if (posOrigin.rowCount) {
+         return res.status(409).json({
+           success: false,
+           message: `This receivable was created from POS sale ${posOrigin.rows[0].sale_no}. Void the originating POS sale or use Customer Returns.`,
+           pos_sale_no: posOrigin.rows[0].sale_no,
          });
        }
 

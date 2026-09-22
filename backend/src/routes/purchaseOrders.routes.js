@@ -1,10 +1,13 @@
 import express from "express";
 import { pool, query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission } from "../middleware/permissions.js";
+import { getUserRoles, requirePermission } from "../middleware/permissions.js";
+import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
 import { refreshPurchaseOrderStatus } from "../utils/purchaseOrderStatus.js";
 
 const router = express.Router();
+router.use(requireAuth, requireLocationAccessWhenSpecified);
+const branchWide = (req) => getUserRoles(req).includes("HEAD_OFFICE");
 
 /**
  * GET /api/purchase-orders
@@ -15,6 +18,7 @@ router.get("/", async (req, res) => {
     const result = await query(`
       SELECT
         po.po_id,
+        po.branch_id,
         po.po_no,
         po.supplier_id,
         s.party_name AS supplier_name,
@@ -33,8 +37,10 @@ router.get("/", async (req, res) => {
         ON u.user_id = po.created_by
       LEFT JOIN pur.purchase_order_line pol
         ON pol.po_id = po.po_id
+      WHERE ($1::boolean OR po.branch_id=$2)
       GROUP BY
         po.po_id,
+        po.branch_id,
         po.po_no,
         po.supplier_id,
         s.party_name,
@@ -45,7 +51,7 @@ router.get("/", async (req, res) => {
         u.full_name,
         po.created_at
       ORDER BY po.created_at DESC, po.po_no DESC;
-    `);
+    `, [branchWide(req), req.branchId]);
 
     res.json({
       success: true,
@@ -123,6 +129,7 @@ router.get("/reports/summary", async (req, res) => {
       ) grn_summary
         ON grn_summary.po_id = po.po_id
 
+      WHERE ($1::boolean OR po.branch_id=$2)
       GROUP BY
         po.po_id,
         po.po_no,
@@ -139,7 +146,7 @@ router.get("/reports/summary", async (req, res) => {
         po.created_at
 
       ORDER BY po.created_at DESC;
-    `);
+    `, [branchWide(req), req.branchId]);
 
     res.json({
       success: true,
@@ -167,6 +174,7 @@ router.get("/:poId", async (req, res) => {
       `
       SELECT
         po.po_id,
+        po.branch_id,
         po.po_no,
         po.supplier_id,
         s.party_name AS supplier_name,
@@ -181,9 +189,9 @@ router.get("/:poId", async (req, res) => {
         ON s.party_id = po.supplier_id
       LEFT JOIN sec.app_user u
         ON u.user_id = po.created_by
-      WHERE po.po_id = $1;
+      WHERE po.po_id = $1 AND ($2::boolean OR po.branch_id=$3);
       `,
-      [poId]
+      [poId, branchWide(req), req.branchId]
     );
 
     if (headerResult.rowCount === 0) {
@@ -249,7 +257,7 @@ router.get("/:poId", async (req, res) => {
 router.post(
   "/",
   requireAuth,
-  requirePermission("CREATE_PURCHASE_ORDER"),
+  requirePermission("CREATE_BRANCH_PO"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -299,10 +307,16 @@ router.post(
 
       await client.query("BEGIN");
 
+      const policy=await client.query(`SELECT procurement_mode,is_head_office FROM app.branch WHERE branch_id=$1 AND is_active FOR SHARE`,[req.branchId]);
+      if(!policy.rowCount)throw Object.assign(new Error("The operating branch is unavailable."),{status:403});
+      if(policy.rows[0].procurement_mode==="CENTRAL_ONLY"&&!policy.rows[0].is_head_office)throw Object.assign(new Error("This branch is CENTRAL_ONLY; request internal replenishment or route purchasing through Head Office."),{status:403});
+      const initialStatus=policy.rows[0].procurement_mode==="LOCAL_WITH_APPROVAL"&&!policy.rows[0].is_head_office?"PENDING_APPROVAL":"OPEN";
+
       const headerResult = await client.query(
         `
         INSERT INTO pur.purchase_order (
           po_id,
+          branch_id,
           po_no,
           supplier_id,
           order_date,
@@ -313,16 +327,18 @@ router.post(
         )
         VALUES (
           gen_random_uuid(),
-          'PO-' || to_char(now(), 'YYYYMMDD-HH24MISS'),
           $1,
+          'PO-' || to_char(now(), 'YYYYMMDD-HH24MISS'),
           $2,
           $3,
-          'OPEN',
           $4,
+          $5,
+          $6,
           now()
         )
-        RETURNING
+      RETURNING
           po_id,
+          branch_id,
           po_no,
           supplier_id,
           order_date,
@@ -332,9 +348,11 @@ router.post(
           created_at;
         `,
         [
+          req.branchId,
           supplier_id,
           order_date,
           expected_date || order_date,
+          initialStatus,
           created_by || req.user?.user_id || null
         ]
       );
@@ -390,7 +408,7 @@ router.post(
     } catch (error) {
       await client.query("ROLLBACK");
 
-      res.status(500).json({
+      res.status(error.status||500).json({
         success: false,
         message: "Failed to create purchase order.",
         error: error.message
@@ -401,6 +419,20 @@ router.post(
   }
 );
 
+
+router.post("/:poId/approve",requireAuth,requirePermission("APPROVE_BRANCH_PO"),async(req,res)=>{
+  try{
+    const branch=await query(`SELECT po.branch_id,po.status,b.procurement_mode FROM pur.purchase_order po JOIN app.branch b ON b.branch_id=po.branch_id WHERE po.po_id=$1`,[req.params.poId]);
+    if(!branch.rowCount)return res.status(404).json({success:false,message:"Purchase order not found."});
+    const roles=getUserRoles(req);const hasBranch=Boolean((await query(`SELECT 1 FROM sec.user_branch WHERE user_id=$1 AND branch_id=$2 AND is_active`,[req.user?.user_id,branch.rows[0].branch_id])).rowCount);
+    if(!hasBranch&&!roles.includes("HEAD_OFFICE"))return res.status(403).json({success:false,message:"You are not authorized for this purchase order branch."});
+    if(branch.rows[0].procurement_mode!=="LOCAL_WITH_APPROVAL")return res.status(409).json({success:false,message:"This branch does not require local purchase approval."});
+    const r=await query(`UPDATE pur.purchase_order SET status='OPEN',approved_by=$2,approved_at=now() WHERE po_id=$1 AND status='PENDING_APPROVAL' RETURNING *`,[req.params.poId,req.user?.user_id]);
+    if(!r.rowCount)return res.status(409).json({success:false,message:"Only pending purchase orders can be approved."});
+    await query(`INSERT INTO audit.event(event_id,event_ts,user_id,action,table_name,row_pk,row_data,txid) VALUES(gen_random_uuid(),now(),$1,'U','pur.purchase_order',jsonb_build_object('po_id',$2::text),$3::jsonb,txid_current())`,[req.user?.user_id,req.params.poId,JSON.stringify({operation:"APPROVE",purchase_order:r.rows[0]})]);
+    res.json({success:true,data:r.rows[0]});
+  }catch(error){res.status(500).json({success:false,message:"Failed to approve branch purchase order.",error:error.message});}
+});
 
 /**
  * PATCH /api/purchase-orders/:poId/refresh-status

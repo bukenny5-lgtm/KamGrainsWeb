@@ -1,10 +1,28 @@
 import express from "express";
 import { query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { getUserRoles, ACTION_ROLES, requirePermission } from "../middleware/permissions.js";
+import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
 
 console.log("=== LOADED reports.routes.js ===");
 console.log("=== LOADED reports.routes.js ===");
 const router = express.Router();
+router.use(requireAuth, requireLocationAccessWhenSpecified);
+const BRANCH_SCOPED_REPORTS = new Set([
+  "/customer-weekly-performance",
+  "/dormant-customers",
+  "/customer-rfm",
+  "/weekly-sales-by-product",
+  "/weekly-purchases-by-product",
+  "/weekly-profit-by-product",
+  "/weekly-management-summary",
+]);
+router.use((req,res,next)=>{
+  const roles=getUserRoles(req);
+  if(!roles.some(role=>ACTION_ROLES.VIEW_ONLY.includes(role)))return res.status(403).json({success:false,message:"You do not have permission to view reports."});
+  if(!BRANCH_SCOPED_REPORTS.has(req.path)&&!roles.includes("HEAD_OFFICE"))return res.status(403).json({success:false,message:"These consolidated report views are not yet branch-scoped."});
+  next();
+});
 
 /**
  * Finance error helpers (from finance.routes.js)
@@ -104,15 +122,15 @@ router.get("/customer-weekly-performance", requireAuth, async (req, res) => {
     FROM app.party c
     LEFT JOIN (
         SELECT customer_id,
-               COUNT(DISTINCT event_id) AS orders_count,
+               COUNT(DISTINCT event_id) FILTER(WHERE source<>'RETURN') AS orders_count,
                SUM(qty) AS total_kg_purchased,
                SUM(revenue) AS total_revenue,
                MAX(event_date) AS last_purchase_date
         FROM reporting.v_sales_event_lines
-        WHERE customer_id IS NOT NULL AND event_date BETWEEN $1::DATE AND $2::DATE
+        WHERE customer_id IS NOT NULL AND event_date BETWEEN $1::DATE AND $2::DATE AND branch_id=$3
         GROUP BY customer_id
     ) s ON s.customer_id = c.party_id
-    WHERE c.party_type = 'CUSTOMER'
+    WHERE c.party_type = 'CUSTOMER' AND s.customer_id IS NOT NULL
 ),
       customer_summary AS (
     SELECT
@@ -144,7 +162,7 @@ FROM customer_summary cs
 ORDER BY
     cs.revenue DESC,
     cs.party_name;
-    `, [week_start, week_end]);
+    `, [week_start, week_end, req.branchId]);
 
     res.json({
       success: true,
@@ -175,45 +193,19 @@ router.get("/dormant-customers", requireAuth, async (req, res) => {
     const { week_start, week_end } = getWeekBoundaries(week_date);
 
     const result = await query(`
-      WITH customer_last_purchase AS (
-    SELECT
-        c.party_id,
-        c.party_name,
-
-        /* Last completed delivery */
-        (
-            SELECT MAX(d.transaction_date)
-            FROM sal.delivery d
-            WHERE d.customer_id = c.party_id
-        ) AS last_purchase_date,
-
-        /* Total value of the last completed delivery */
-        (
-            SELECT COALESCE(SUM(
-                COALESCE(dl.sell_qty, dl.qty,0) *
-                COALESCE(dl.unit_price,0)
-            ),0)
-            FROM sal.delivery d
-            JOIN sal.delivery_line dl
-                ON dl.delivery_id = d.delivery_id
-            WHERE d.customer_id = c.party_id
-              AND d.transaction_date = (
-                    SELECT MAX(d2.transaction_date)
-                    FROM sal.delivery d2
-                    WHERE d2.customer_id = c.party_id
-              )
-        ) AS last_purchase_value,
-
-        /* Days since last purchase */
-        (
-            SELECT CURRENT_DATE - MAX(d.transaction_date)::DATE
-            FROM sal.delivery d
-            WHERE d.customer_id = c.party_id
-        ) AS days_since
-
-    FROM app.party c
-    WHERE c.party_type = 'CUSTOMER'
-),
+      WITH branch_sales AS (
+        SELECT * FROM reporting.v_sales_event_lines
+        WHERE branch_id=$4 AND customer_id IS NOT NULL AND source<>'RETURN'
+      ), customer_last_purchase AS (
+        SELECT c.party_id,c.party_name,MAX(bs.event_date) AS last_purchase_date,
+               COALESCE(SUM(bs.revenue) FILTER(WHERE bs.event_date=last_event.event_date),0) AS last_purchase_value,
+               CURRENT_DATE-MAX(bs.event_date)::date AS days_since
+        FROM app.party c
+        JOIN branch_sales bs ON bs.customer_id=c.party_id
+        JOIN LATERAL(SELECT MAX(event_date) AS event_date FROM branch_sales recent WHERE recent.customer_id=c.party_id) last_event ON true
+        WHERE c.party_type='CUSTOMER'
+        GROUP BY c.party_id,c.party_name,last_event.event_date
+      ),
       dormant_status AS (
         SELECT
           party_id,
@@ -229,10 +221,9 @@ router.get("/dormant-customers", requireAuth, async (req, res) => {
           END AS status
         FROM customer_last_purchase
         WHERE NOT EXISTS (
-          SELECT 1
-          FROM sal.delivery d2
-          WHERE d2.customer_id = customer_last_purchase.party_id
-            AND DATE(d2.transaction_date) BETWEEN $1::DATE AND $2::DATE
+          SELECT 1 FROM branch_sales e
+          WHERE e.customer_id = customer_last_purchase.party_id
+            AND e.event_date BETWEEN $1::DATE AND $2::DATE
         )
       )
       SELECT
@@ -245,7 +236,7 @@ router.get("/dormant-customers", requireAuth, async (req, res) => {
       FROM dormant_status cs
       WHERE $3::TEXT IS NULL OR status = $3::TEXT
       ORDER BY days_since DESC, party_name;
-    `, [week_start, week_end, status || null]);
+    `, [week_start, week_end, status || null, req.branchId]);
 
     res.json({
       success: true,
@@ -270,43 +261,20 @@ router.get("/customer-rfm", requireAuth, async (req, res) => {
     const { week_start, week_end } = getWeekBoundaries(week_date);
 
     const result = await query(`
-      WITH rfm_data AS (
-    SELECT
-        c.party_id,
-        c.party_name,
-
-        /* RECENCY */
-        (
-            SELECT $2::DATE - MAX(d.transaction_date)::DATE
-            FROM sal.delivery d
-            WHERE d.customer_id = c.party_id
-              AND DATE(d.transaction_date) BETWEEN $1::DATE AND $2::DATE
-        ) AS recency,
-
-        /* FREQUENCY */
-        (
-            SELECT COUNT(DISTINCT d.delivery_id)
-            FROM sal.delivery d
-            WHERE d.customer_id = c.party_id
-              AND DATE(d.transaction_date) BETWEEN $1::DATE AND $2::DATE
-        ) AS frequency,
-
-        /* MONETARY */
-        (
-            SELECT COALESCE(SUM(
-                COALESCE(dl.sell_qty, dl.qty, 0) *
-                COALESCE(dl.unit_price, 0)
-            ), 0)
-            FROM sal.delivery d
-            JOIN sal.delivery_line dl
-              ON dl.delivery_id = d.delivery_id
-            WHERE d.customer_id = c.party_id
-              AND DATE(d.transaction_date) BETWEEN $1::DATE AND $2::DATE
-        ) AS monetary
-
-    FROM app.party c
-    WHERE c.party_type = 'CUSTOMER'
-),
+      WITH branch_events AS (
+        SELECT * FROM reporting.v_sales_event_lines
+        WHERE branch_id=$3 AND event_date BETWEEN $1::DATE AND $2::DATE AND customer_id IS NOT NULL
+      ), rfm_data AS (
+        SELECT c.party_id,c.party_name,
+               COALESCE($2::DATE-MAX(e.event_date) FILTER(WHERE e.source<>'RETURN'),999) AS recency,
+               COUNT(DISTINCT e.event_id) FILTER(WHERE e.source<>'RETURN') AS frequency,
+               COALESCE(SUM(e.revenue),0) AS monetary
+        FROM app.party c
+        LEFT JOIN branch_events e ON e.customer_id=c.party_id
+        WHERE c.party_type='CUSTOMER'
+          AND EXISTS(SELECT 1 FROM reporting.v_sales_event_lines history WHERE history.branch_id=$3 AND history.customer_id=c.party_id AND history.source<>'RETURN')
+        GROUP BY c.party_id,c.party_name
+      ),
       segmented AS (
         SELECT
           party_id,
@@ -349,7 +317,7 @@ END AS segment
         segment
       FROM segmented
       ORDER BY segment, monetary DESC, party_name;
-    `, [week_start, week_end]);
+    `, [week_start, week_end, req.branchId]);
 
     // Aggregate by segment
     const segments = {};
@@ -405,17 +373,18 @@ router.get("/weekly-sales-by-product", requireAuth, async (req, res) => {
           THEN COALESCE(SUM(s.revenue), 0) / COALESCE(SUM(s.qty), 1)
           ELSE 0
         END AS average_selling_price,
-        COUNT(DISTINCT s.event_id) AS orders_count,
+        COUNT(DISTINCT s.event_id) FILTER(WHERE s.source<>'RETURN') AS orders_count,
         COUNT(DISTINCT s.customer_id) AS customers_count
       FROM inv.product p
         LEFT JOIN reporting.v_sales_event_lines s
-          ON s.product_id = p.product_id
+         ON s.product_id = p.product_id
          AND s.event_date BETWEEN $1::DATE AND $2::DATE
+         AND s.branch_id=$3
       WHERE p.product_type IN ('FINISHED','RAW') AND p.is_active = true
       GROUP BY p.product_id, p.product_name, p.sku
         HAVING COALESCE(SUM(s.qty), 0) > 0
       ORDER BY revenue DESC, p.product_name;
-    `, [week_start, week_end]);
+    `, [week_start, week_end, req.branchId]);
 
     res.json({
       success: true,
@@ -475,6 +444,7 @@ FROM inv.product p
 
 LEFT JOIN pur.goods_receipt gr
     ON DATE(gr.receipt_date) BETWEEN $1::DATE AND $2::DATE
+   AND EXISTS(SELECT 1 FROM app.location loc WHERE loc.location_id=gr.location_id AND loc.branch_id=$3)
 
 LEFT JOIN pur.goods_receipt_line grl
     ON grl.grn_id = gr.grn_id
@@ -495,7 +465,7 @@ HAVING
 ORDER BY
     purchase_value DESC,
     p.product_name;
-    `, [week_start, week_end]);
+    `, [week_start, week_end, req.branchId]);
 
     res.json({
       success: true,
@@ -534,6 +504,7 @@ router.get("/weekly-profit-by-product", requireAuth, async (req, res) => {
         LEFT JOIN reporting.v_sales_event_lines s
           ON s.product_id = p.product_id
          AND s.event_date BETWEEN $1::DATE AND $2::DATE
+         AND s.branch_id=$3
         WHERE p.product_type IN ('FINISHED','RAW') AND p.is_active = true
         GROUP BY p.product_id, p.product_name, p.sku
       )
@@ -552,7 +523,7 @@ router.get("/weekly-profit-by-product", requireAuth, async (req, res) => {
       FROM sales_data s
       WHERE s.revenue > 0
       ORDER BY s.revenue DESC, s.product_name;
-    `, [week_start, week_end]);
+    `, [week_start, week_end, req.branchId]);
 
     res.json({
       success: true,
@@ -581,41 +552,46 @@ router.get("/weekly-management-summary", requireAuth, async (req, res) => {
       WITH weekly_sales AS (
         SELECT
           COALESCE(SUM(revenue), 0) AS total_revenue,
-          COUNT(DISTINCT event_id) AS total_orders,
+          COUNT(DISTINCT event_id) FILTER(WHERE source<>'RETURN') AS total_orders,
           COUNT(DISTINCT customer_id) AS total_customers
         FROM reporting.v_sales_event_lines
-        WHERE event_date BETWEEN $1::DATE AND $2::DATE
+        WHERE event_date BETWEEN $1::DATE AND $2::DATE AND branch_id=$3
       ),
       weekly_purchases AS (
         SELECT
           COALESCE(SUM(apil.qty * apil.unit_price), 0) AS total_purchases
         FROM pur.ap_invoice api
+        JOIN pur.goods_receipt gr ON gr.grn_id=api.grn_id
+        JOIN app.location ploc ON ploc.location_id=gr.location_id
         LEFT JOIN pur.ap_invoice_line apil ON apil.ap_invoice_id = api.ap_invoice_id
-        WHERE DATE(api.transaction_date) BETWEEN $1::DATE AND $2::DATE
+        WHERE DATE(api.transaction_date) BETWEEN $1::DATE AND $2::DATE AND ploc.branch_id=$3
       ),
       weekly_cogs AS (
         SELECT COALESCE(SUM(cogs), 0) AS total_cogs
         FROM reporting.v_sales_event_lines
-        WHERE event_date BETWEEN $1::DATE AND $2::DATE
+        WHERE event_date BETWEEN $1::DATE AND $2::DATE AND branch_id=$3
       ),
       new_customers AS (
-        SELECT COUNT(DISTINCT customer_id) AS new_count
-        FROM sal.sales_order
-        WHERE DATE(created_at) BETWEEN $1::DATE AND $2::DATE
-          AND customer_id NOT IN (
-            SELECT DISTINCT customer_id
-            FROM sal.sales_order
-            WHERE DATE(created_at) < $1::DATE
-          )
+        SELECT COUNT(*) AS new_count FROM (
+          SELECT customer_id,MIN(event_date) AS first_date
+          FROM reporting.v_sales_event_lines
+          WHERE branch_id=$3 AND customer_id IS NOT NULL AND source<>'RETURN'
+          GROUP BY customer_id
+        ) branch_first_activity
+        WHERE first_date BETWEEN $1::DATE AND $2::DATE
       ),
       dormant_count AS (
         SELECT COUNT(DISTINCT c.party_id) AS dormant
-        FROM app.party c
+        FROM (
+          SELECT DISTINCT customer_id FROM reporting.v_sales_event_lines
+          WHERE branch_id=$3 AND customer_id IS NOT NULL AND source<>'RETURN'
+        ) branch_customer
+        JOIN app.party c ON c.party_id=branch_customer.customer_id
         WHERE c.party_type = 'CUSTOMER'
           AND NOT EXISTS (
-            SELECT 1 FROM sal.delivery d
-            WHERE d.customer_id = c.party_id
-              AND DATE(d.transaction_date) BETWEEN $1::DATE AND $2::DATE
+            SELECT 1 FROM reporting.v_sales_event_lines e
+            WHERE e.customer_id = c.party_id AND e.branch_id=$3 AND e.source<>'RETURN'
+              AND e.event_date BETWEEN $1::DATE AND $2::DATE
           )
       ),
       top_customer_data AS (
@@ -623,8 +599,8 @@ router.get("/weekly-management-summary", requireAuth, async (req, res) => {
           c.party_name,
           COALESCE(SUM(s.revenue), 0) AS revenue
         FROM app.party c
-        LEFT JOIN reporting.v_sales_event_lines s ON s.customer_id = c.party_id AND s.event_date BETWEEN $1::DATE AND $2::DATE
-        WHERE c.party_type = 'CUSTOMER'
+        LEFT JOIN reporting.v_sales_event_lines s ON s.customer_id = c.party_id AND s.event_date BETWEEN $1::DATE AND $2::DATE AND s.branch_id=$3
+        WHERE c.party_type = 'CUSTOMER' AND s.customer_id IS NOT NULL
         GROUP BY c.party_id, c.party_name
         ORDER BY revenue DESC
         LIMIT 1
@@ -634,8 +610,8 @@ router.get("/weekly-management-summary", requireAuth, async (req, res) => {
           p.product_name,
           COALESCE(SUM(s.revenue), 0) AS revenue
         FROM inv.product p
-        LEFT JOIN reporting.v_sales_event_lines s ON s.product_id = p.product_id AND s.event_date BETWEEN $1::DATE AND $2::DATE
-        WHERE p.product_type IN ('FINISHED','RAW') AND p.is_active = true
+        LEFT JOIN reporting.v_sales_event_lines s ON s.product_id = p.product_id AND s.event_date BETWEEN $1::DATE AND $2::DATE AND s.branch_id=$3
+        WHERE p.product_type IN ('FINISHED','RAW') AND p.is_active = true AND s.product_id IS NOT NULL
         GROUP BY p.product_id, p.product_name
         ORDER BY revenue DESC
         LIMIT 1
@@ -657,7 +633,7 @@ router.get("/weekly-management-summary", requireAuth, async (req, res) => {
         COALESCE(tp.revenue, 0) AS top_product_revenue,
         CASE WHEN ws.total_orders > 0 THEN ws.total_revenue / ws.total_orders ELSE 0 END AS average_order_value
       FROM weekly_sales ws, weekly_purchases wp, weekly_cogs wc, new_customers nc, dormant_count dc, top_customer_data tc, top_product_data tp;
-    `, [week_start, week_end]);
+    `, [week_start, week_end, req.branchId]);
 
     res.json({
       success: true,

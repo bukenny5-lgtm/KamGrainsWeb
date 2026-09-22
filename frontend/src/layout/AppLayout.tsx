@@ -29,6 +29,7 @@ import { useAuth } from "@/lib/auth";
 import { ROLE_GROUPS, roleList } from "@/lib/permissions";
 import { useBusinessProfile } from "@/lib/businessProfile";
 import { useBusinessFeatures } from "@/lib/businessFeatures";
+import { useOperatingContext } from "@/lib/operatingContext";
 import type { BusinessFeatureCode } from "@/types/api";
 
 type NavItem = {
@@ -61,6 +62,8 @@ const navItems: NavItem[] = [
     roles: roleList(ROLE_GROUPS.INVENTORY_VIEW_ACCESS),
     feature: "inventory",
   },
+  { label: "Internal Stock Requests", path: "/stock-requests", icon: ClipboardList, roles: ["ADMIN","MANAGER","INVENTORY","PURCHASING","HEAD_OFFICE"], feature: "inventory" },
+  { label: "Inter-Site Transfers", path: "/stock-transfers", icon: ArrowRightLeft, roles: ["ADMIN","MANAGER","INVENTORY","HEAD_OFFICE"], feature: "inventory" },
   {
     label: "Purchasing",
     path: "/purchasing",
@@ -237,6 +240,8 @@ const navItems: NavItem[] = [
 const pageSubtitles: Record<string, string> = {
   "/": "Integrated business management system for KAM GRAINS SUPPLIES",
   "/inventory": "Monitor stock balances by product, lot, and location.",
+  "/stock-requests": "Request internal replenishment and track approval and outstanding supply.",
+  "/stock-transfers": "Dispatch and receive inventory through transit with recorded variances.",
   "/stock-movements": "Review inventory movement history and audit stock flow.",
   "/purchasing": "Create and track supplier purchase orders.",
   "/grn": "Receive supplier goods and post stock into inventory.",
@@ -283,6 +288,7 @@ export default function AppLayout() {
   const { user, logout, hasRole } = useAuth();
   const { data: businessProfile } = useBusinessProfile();
   const { hasFeature } = useBusinessFeatures();
+  const operating = useOperatingContext();
   const location = useLocation();
 
   const visibleNavItems = navItems.filter((item) => hasRole(item.roles) && (!item.feature || hasFeature(item.feature)));
@@ -357,6 +363,10 @@ export default function AppLayout() {
           </div>
 
           <div className="flex items-center gap-3">
+            {hasFeature("MULTI_LOCATION") && operating.currentBranch && <div className="hidden items-center gap-2 lg:flex">
+              {operating.authorizedBranches.length>1?<label className="flex items-center gap-2 text-xs font-medium text-slate-600">Branch<select className="max-w-40 rounded-lg border bg-white px-2 py-2 text-sm text-slate-900" value={operating.currentBranch.branch_id} onChange={event=>operating.changeBranch(event.target.value)}>{operating.authorizedBranches.map(branch=><option key={branch.branch_id} value={branch.branch_id}>{branch.branch_name}</option>)}</select></label>:<span className="rounded-lg border bg-slate-50 px-3 py-2 text-sm">Branch: <strong>{operating.currentBranch.branch_name}</strong></span>}
+              {operating.authorizedLocations.length>1?<label className="flex items-center gap-2 text-xs font-medium text-slate-600">Location<select className="max-w-48 rounded-lg border bg-white px-2 py-2 text-sm text-slate-900" value={operating.currentLocation?.location_id||""} onChange={event=>operating.changeLocation(event.target.value)}>{operating.authorizedLocations.map(location=><option key={location.location_id} value={location.location_id}>{location.location_name}</option>)}</select></label>:operating.currentLocation&&<span className="rounded-lg border bg-slate-50 px-3 py-2 text-sm">Location: <strong>{operating.currentLocation.location_name}</strong></span>}
+            </div>}
             <div className="hidden rounded-2xl border bg-slate-50 px-4 py-2 md:block">
               <div className="flex items-center gap-2">
                 <UserCircle className="h-5 w-5 text-slate-500" />
@@ -381,6 +391,11 @@ export default function AppLayout() {
         </header>
 
         <section className="p-8">
+          {operating.currentBranch && !operating.currentLocation && (
+            <div role="alert" className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              No authorized operating location is configured for this branch. An administrator can assign or configure a location in Setup.
+            </div>
+          )}
           <Outlet />
         </section>
       </main>

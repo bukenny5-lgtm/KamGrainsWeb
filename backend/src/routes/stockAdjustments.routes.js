@@ -1,9 +1,22 @@
 import express from "express";
 import { pool, query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission } from "../middleware/permissions.js";
+import { getUserRoles, requirePermission } from "../middleware/permissions.js";
+import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
 
 const router = express.Router();
+router.use(requireAuth, requireLocationAccessWhenSpecified);
+const allLocations = (req) => getUserRoles(req).some((role) => ["ADMIN", "MANAGER", "AUDITOR", "HEAD_OFFICE"].includes(role));
+router.param("documentNo", async (req,res,next,documentNo) => {
+  try {
+    const found=await query(`SELECT da.from_location_id,COALESCE(fl.branch_id,tl.branch_id) AS branch_id FROM inv.damage_adjustment da LEFT JOIN app.location fl ON fl.location_id=da.from_location_id LEFT JOIN app.location tl ON tl.location_id=da.to_location_id WHERE da.document_no=$1`,[documentNo]);
+    if(!found.rowCount)return res.status(404).json({success:false,message:"Stock adjustment not found."});
+    const row=found.rows[0];
+    if(row.branch_id!==req.branchId)return res.status(403).json({success:false,message:"You are not authorized for this adjustment branch."});
+    if(!allLocations(req)&&!(await query(`SELECT 1 FROM sec.user_location WHERE user_id=$1 AND location_id=$2 AND is_active`,[req.user?.user_id,row.from_location_id])).rowCount)return res.status(403).json({success:false,message:"You are not authorized for this adjustment location."});
+    next();
+  } catch(error){next(error);}
+});
 
 function sendStockAdjustmentError(res, error, fallbackMessage = "Stock adjustment action failed.") {
   const status = error?.statusCode || error?.status || 500;
@@ -221,6 +234,8 @@ router.get("/", async (req, res) => {
         ON dal.damage_adjustment_id = da.damage_adjustment_id
       LEFT JOIN sec.app_user u
         ON u.user_id = da.created_by
+      WHERE COALESCE(from_loc.branch_id,to_loc.branch_id)=$1
+        AND ($2::boolean OR EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$3 AND ul.location_id=da.from_location_id AND ul.is_active))
       GROUP BY
         da.damage_adjustment_id,
         da.document_no,
@@ -243,7 +258,7 @@ router.get("/", async (req, res) => {
         u.full_name,
         da.created_at
       ORDER BY da.created_at DESC;
-    `);
+    `,[req.branchId,allLocations(req),req.user?.user_id]);
 
     res.json({ success: true, count: result.rowCount, data: result.rows });
   } catch (error) {

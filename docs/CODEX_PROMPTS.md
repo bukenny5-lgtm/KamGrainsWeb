@@ -114,3 +114,19 @@ Phase 18 follow-up: validate original SALE_ISSUE unit-cost reuse during void, cr
 - **Objective:** Diagnose the blank frontend, rerun acceptance, and patch only genuine runtime defects.
 - **Result:** Hardened `AuthProvider.hasRole()`; authenticated Dashboard, Setup, and Customer Returns render. Current backend source lookup passed on port 3001.
 - **Remaining:** Existing authenticated browser session targets an older port-3000 backend, so financial UI, Delivery/KAM, dashboard/cache, and Return Note acceptance remain pending.
+# Phase 5 prompt checkpoint — 2026-09-22
+
+Implement the multi-location foundation in the existing business/location model. Preserve transaction history and Phase 4 flows. Follow up with development migration/API/UI validation, static builds, and operational/report location-scope review. Do not deploy or commit without approval.
+
+## Phase 5 continuation checkpoint — 2026-09-22
+
+Phase 24 remains intact. Phase 25 adds branch ownership/current context, but acceptance is incomplete. Continue by auditing each legacy route/report for branch/location read and write scope; add branch/user/location administration UI; verify GRN/Delivery/AR/AP/refund branch inheritance; validate transfer costing and stock conservation; then run authenticated Branch A/B, restricted/multi-branch/HQ, finance/report, single-branch, and Phase 4 regression tests. Do not claim completion until runtime proof is recorded. Do not deploy, touch production, or commit.
+
+
+## 2026-09-22 — Phase 5 Acceptance Hardening and Validation
+
+- **Objective:** Prove and harden Phase 24/25 multi-branch operations without expanding architecture; complete only minimum branch/location user administration UI; record verified and pending acceptance cases.
+- **Result:** Audited and patched confirmed branch/location scope omissions in legacy routes; added source-derived AR/AP allocation scope; added Setup assignment/default panel; completed rollback-only A/B membership/stock fixture. Reports without verified branch dimensions fail closed to non-HEAD_OFFICE users.
+- **Validation:** Backend build and frontend TypeScript passed. Final frontend build, route syntax and diff results are recorded in `docs/TEST_LOG.md`. Authenticated API/browser matrix remains pending.
+- **Files:** Phase 5 route/middleware changes, branch access UI/API, and acceptance documentation.
+- **Accepted/Modified:** No new phase feature or migration; Phase 24/25 migrations retained. Production untouched; no deployment or commit.

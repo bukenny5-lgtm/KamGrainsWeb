@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { getDashboardSummary } from "@/api/client";
+import { useOperatingContext } from "@/lib/operatingContext";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -106,11 +107,14 @@ function SmallMetric({ label, value }: { label: string; value: string }) {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const operating = useOperatingContext();
+  const branchId = operating.currentBranch?.branch_id || "";
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
-    queryKey: ["dashboard-summary"],
-    queryFn: getDashboardSummary,
+    queryKey: ["dashboard-summary", branchId],
+    queryFn: () => getDashboardSummary(branchId),
+    enabled: Boolean(branchId),
   });
 
   async function handleRefresh() {
@@ -127,11 +131,20 @@ export default function Dashboard() {
   const recentReceipts: AnyRecord[] = normalizeArray(summary.recent_receipts);
   const alerts: AnyRecord[] = normalizeArray(summary.alerts);
 
-  if (isLoading) {
+  if (operating.isLoading || (Boolean(branchId) && isLoading)) {
     return (
       <div className="flex h-80 items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
       </div>
+    );
+  }
+
+  if (!branchId) {
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>Dashboard unavailable</AlertTitle>
+        <AlertDescription>No authorized active branch is selected.</AlertDescription>
+      </Alert>
     );
   }
 
@@ -173,7 +186,7 @@ export default function Dashboard() {
 
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          title="Total Stock Qty"
+          title="Saleable Stock Qty"
           value={`${formatNumber(summary?.inventory?.total_stock_qty)} KG`}
           subtitle={`${formatNumber(summary?.inventory?.product_count)} products | ${formatNumber(summary?.inventory?.lot_count)} lots`}
           icon={Boxes}
@@ -190,16 +203,16 @@ export default function Dashboard() {
 
         <StatCard
           title="Cash Balance"
-          value={formatMoney(summary?.cash?.cash_balance)}
-          subtitle={`In: ${formatMoney(summary?.cash?.cash_in)} | Out: ${formatMoney(summary?.cash?.cash_out)}`}
+          value={summary?.cash ? formatMoney(summary.cash.cash_balance) : "N/A"}
+          subtitle={summary?.cash ? `In: ${formatMoney(summary.cash.cash_in)} | Out: ${formatMoney(summary.cash.cash_out)}` : "Branch finance attribution is incomplete"}
           icon={Wallet}
           onOpen={() => navigate("/payment-accounts")}
         />
 
         <StatCard
           title="Net Profit"
-          value={formatMoney(summary?.profit_and_loss?.net_profit)}
-          subtitle={`Income: ${formatMoney(summary?.profit_and_loss?.income)}`}
+          value={summary?.profit_and_loss ? formatMoney(summary.profit_and_loss.net_profit) : "N/A"}
+          subtitle={summary?.profit_and_loss ? `Income: ${formatMoney(summary.profit_and_loss.income)}` : "Branch finance attribution is incomplete"}
           icon={WalletCards}
           onOpen={() => navigate("/reports")}
         />

@@ -1,9 +1,29 @@
 import express from "express";
 import { pool, query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission } from "../middleware/permissions.js";
+import { ACTION_ROLES, getUserRoles, requirePermission } from "../middleware/permissions.js";
+import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
 
 const router = express.Router();
+router.use(requireAuth,requireLocationAccessWhenSpecified);
+const BRANCH_SCOPED_FINANCE_REPORTS = new Set([
+  "/reports/general-ledger",
+  "/reports/trial-balance",
+  "/reports/profit-and-loss",
+  "/reports/balance-sheet",
+  "/reports/cashbook",
+]);
+router.use((req,res,next)=>{
+  if(req.path.startsWith("/reports/")){
+    const roles=getUserRoles(req);
+    if(BRANCH_SCOPED_FINANCE_REPORTS.has(req.path)){
+      if(!roles.some(role=>ACTION_ROLES.VIEW_ONLY.includes(role)))return res.status(403).json({success:false,message:"You do not have permission to view finance reports."});
+    }else if(!roles.includes("HEAD_OFFICE")||!roles.some(role=>["ADMIN","MANAGER","AUDITOR","VIEWER","FINANCE","HEAD_OFFICE"].includes(role)))return res.status(403).json({success:false,message:"These consolidated finance reports require authorized Head Office reporting access."});
+  }
+  next();
+});
+router.param("journalNo",async(req,res,next,value)=>{try{const r=await query(`SELECT branch_id FROM fin.gl_journal WHERE journal_no=$1`,[value]);if(!r.rowCount)return res.status(404).json({success:false,message:"Journal not found."});if(r.rows[0].branch_id!==req.branchId)return res.status(403).json({success:false,message:"You are not authorized for this journal branch."});next();}catch(error){next(error);}});
+router.param("voucherNo",async(req,res,next,value)=>{try{const r=await query(`SELECT branch_id FROM fin.expense_voucher WHERE voucher_no=$1`,[value]);if(!r.rowCount)return res.status(404).json({success:false,message:"Expense voucher not found."});if(r.rows[0].branch_id!==req.branchId)return res.status(403).json({success:false,message:"You are not authorized for this voucher branch."});next();}catch(error){next(error);}});
 function getFinanceErrorStatus(error, fallbackStatus = 500) {
   const code = String(error?.code || "");
 
@@ -97,6 +117,7 @@ router.get("/journals", async (req, res) => {
       FROM fin.gl_journal gj
       LEFT JOIN fin.gl_journal_line gjl
         ON gjl.journal_id = gj.journal_id
+      WHERE gj.branch_id=$1
       GROUP BY
         gj.journal_id,
         gj.journal_no,
@@ -107,7 +128,7 @@ router.get("/journals", async (req, res) => {
         gj.created_by,
         gj.created_at
       ORDER BY gj.journal_date DESC, gj.created_at DESC;
-    `);
+    `,[req.branchId]);
 
     res.json({
       success: true,
@@ -143,9 +164,9 @@ router.get("/journals/:journalNo", async (req, res) => {
         created_by,
         created_at
       FROM fin.gl_journal
-      WHERE journal_no = $1;
+      WHERE journal_no = $1 AND branch_id=$2;
       `,
-      [journalNo]
+      [journalNo,req.branchId]
     );
 
     if (headerResult.rowCount === 0) {
@@ -414,8 +435,9 @@ router.get("/reports/general-ledger", async (req, res) => {
         ON ga.account_id = gjl.account_id
       LEFT JOIN app.party p
         ON p.party_id = gjl.party_id
+      WHERE gj.branch_id=$1
       ORDER BY gj.journal_date DESC, gj.journal_no, ga.account_code;
-    `);
+    `,[req.branchId]);
 
     res.json({
       success: true,
@@ -447,8 +469,10 @@ router.get("/reports/trial-balance", async (req, res) => {
         COALESCE(SUM(gjl.credit), 0) AS credit,
         COALESCE(SUM(gjl.debit), 0) - COALESCE(SUM(gjl.credit), 0) AS net_balance
       FROM fin.gl_account ga
+      LEFT JOIN fin.gl_journal gj
+        ON gj.branch_id=$1
       LEFT JOIN fin.gl_journal_line gjl
-        ON gjl.account_id = ga.account_id
+        ON gjl.journal_id=gj.journal_id AND gjl.account_id = ga.account_id
       WHERE ga.is_active = true
       GROUP BY
         ga.account_id,
@@ -456,7 +480,7 @@ router.get("/reports/trial-balance", async (req, res) => {
         ga.account_name,
         ga.account_type
       ORDER BY ga.account_code;
-    `);
+    `,[req.branchId]);
 
     const totalDebit = result.rows.reduce(
       (sum, row) => sum + Number(row.debit || 0),
@@ -469,6 +493,7 @@ router.get("/reports/trial-balance", async (req, res) => {
 
     res.json({
       success: true,
+      scope: { mode: "BRANCH", branch_id: req.branchId },
       count: result.rowCount,
       totals: {
         total_debit: totalDebit,
@@ -507,8 +532,10 @@ router.get("/reports/profit-and-loss", async (req, res) => {
           ELSE 0
         END AS amount
       FROM fin.gl_account ga
+      LEFT JOIN fin.gl_journal gj
+        ON gj.branch_id=$1
       LEFT JOIN fin.gl_journal_line gjl
-        ON gjl.account_id = ga.account_id
+        ON gjl.journal_id=gj.journal_id AND gjl.account_id = ga.account_id
       WHERE ga.account_type IN ('INCOME', 'EXPENSE')
         AND ga.is_active = true
       GROUP BY
@@ -522,7 +549,7 @@ router.get("/reports/profit-and-loss", async (req, res) => {
           ELSE 3
         END,
         ga.account_code;
-    `);
+    `,[req.branchId]);
 
     const income = result.rows
       .filter((row) => row.account_type === "INCOME")
@@ -532,12 +559,24 @@ router.get("/reports/profit-and-loss", async (req, res) => {
       .filter((row) => row.account_type === "EXPENSE")
       .reduce((sum, row) => sum + Number(row.amount || 0), 0);
 
+    const costOfGoodsSold = result.rows
+      .filter((row) => row.account_type === "EXPENSE" && row.account_code === "5000")
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const grossProfit = income - costOfGoodsSold;
+    const operatingExpenses = expenses - costOfGoodsSold;
+
     res.json({
       success: true,
+      scope: { mode: "BRANCH", branch_id: req.branchId },
       summary: {
         income,
         expenses,
-        net_profit: income - expenses
+        cost_of_goods_sold: costOfGoodsSold,
+        gross_profit: grossProfit,
+        operating_expenses: operatingExpenses,
+        operating_profit: grossProfit - operatingExpenses,
+        net_profit: income - expenses,
+        profit_basis_note: "COGS is identified by account 5000. The current chart has no separate non-operating income/expense classification, so operating profit equals net profit."
       },
       data: result.rows
     });
@@ -563,17 +602,23 @@ router.get("/reports/balance-sheet", async (req, res) => {
         ga.account_name,
         COALESCE(SUM(gjl.debit), 0) AS debit,
         COALESCE(SUM(gjl.credit), 0) AS credit,
-        CASE
-          WHEN ga.account_type = 'ASSET'
-            THEN COALESCE(SUM(gjl.debit), 0) - COALESCE(SUM(gjl.credit), 0)
-          WHEN ga.account_type IN ('LIABILITY', 'EQUITY')
-            THEN COALESCE(SUM(gjl.credit), 0) - COALESCE(SUM(gjl.debit), 0)
-          ELSE 0
+      CASE
+        WHEN ga.account_type = 'ASSET'
+          THEN COALESCE(SUM(gjl.debit), 0) - COALESCE(SUM(gjl.credit), 0)
+        WHEN ga.account_type IN ('LIABILITY', 'EQUITY')
+          THEN COALESCE(SUM(gjl.credit), 0) - COALESCE(SUM(gjl.debit), 0)
+        WHEN ga.account_type = 'INCOME'
+          THEN COALESCE(SUM(gjl.credit), 0) - COALESCE(SUM(gjl.debit), 0)
+        WHEN ga.account_type = 'EXPENSE'
+          THEN COALESCE(SUM(gjl.debit), 0) - COALESCE(SUM(gjl.credit), 0)
+        ELSE 0
         END AS amount
       FROM fin.gl_account ga
+      LEFT JOIN fin.gl_journal gj
+        ON gj.branch_id=$1
       LEFT JOIN fin.gl_journal_line gjl
-        ON gjl.account_id = ga.account_id
-      WHERE ga.account_type IN ('ASSET', 'LIABILITY', 'EQUITY')
+        ON gjl.journal_id=gj.journal_id AND gjl.account_id = ga.account_id
+      WHERE ga.account_type IN ('ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE')
         AND ga.is_active = true
       GROUP BY
         ga.account_type,
@@ -587,7 +632,7 @@ router.get("/reports/balance-sheet", async (req, res) => {
           ELSE 4
         END,
         ga.account_code;
-    `);
+    `,[req.branchId]);
 
     const assets = result.rows
       .filter((row) => row.account_type === "ASSET")
@@ -597,20 +642,38 @@ router.get("/reports/balance-sheet", async (req, res) => {
       .filter((row) => row.account_type === "LIABILITY")
       .reduce((sum, row) => sum + Number(row.amount || 0), 0);
 
-    const equity = result.rows
+    const bookEquity = result.rows
       .filter((row) => row.account_type === "EQUITY")
       .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const currentEarnings = result.rows
+      .filter((row) => ["INCOME", "EXPENSE"].includes(row.account_type))
+      .reduce((sum, row) => sum + (row.account_type === "INCOME" ? 1 : -1) * Number(row.amount || 0), 0);
+    const equity = bookEquity + currentEarnings;
+    const balanceSheetRows = result.rows.filter((row) => ["ASSET", "LIABILITY", "EQUITY"].includes(row.account_type));
+    if (currentEarnings !== 0) balanceSheetRows.push({
+      account_type: "EQUITY",
+      account_code: "CURRENT_EARNINGS",
+      account_name: "Unclosed Branch Earnings",
+      debit: 0,
+      credit: 0,
+      amount: currentEarnings,
+      source: "CALCULATED_FROM_BRANCH_P_AND_L",
+    });
 
     res.json({
       success: true,
+      scope: { mode: "BRANCH", branch_id: req.branchId },
       summary: {
         assets,
         liabilities,
         equity,
+        book_equity: bookEquity,
+        current_earnings: currentEarnings,
         liabilities_plus_equity: liabilities + equity,
-        difference: assets - (liabilities + equity)
+        difference: assets - (liabilities + equity),
+        allocation_note: "Only journal postings tagged to the selected branch are included. Company-wide balances are not allocated across branches."
       },
-      data: result.rows
+      data: balanceSheetRows
     });
   } catch (error) {
     res.status(500).json({
@@ -644,9 +707,9 @@ router.get("/reports/cashbook", async (req, res) => {
         ON gjl.journal_id = gj.journal_id
       JOIN fin.gl_account ga
         ON ga.account_id = gjl.account_id
-      WHERE ga.account_code IN ('1000', '1010')
+      WHERE ga.account_code IN ('1000', '1010') AND gj.branch_id=$1
       ORDER BY gj.journal_date DESC, gj.journal_no;
-    `);
+    `,[req.branchId]);
 
     const cashIn = result.rows.reduce(
       (sum, row) => sum + Number(row.cash_in || 0),
@@ -659,6 +722,7 @@ router.get("/reports/cashbook", async (req, res) => {
 
     res.json({
       success: true,
+      scope: { mode: "BRANCH", branch_id: req.branchId },
       count: result.rowCount,
       summary: {
         cash_in: cashIn,
@@ -1033,6 +1097,7 @@ router.get("/expense-vouchers", async (req, res) => {
     const result = await query(`
       SELECT
         ev.expense_voucher_id,
+        ev.branch_id,
         ev.voucher_no,
         ev.voucher_date,
         ev.payee_id,
@@ -1058,8 +1123,10 @@ router.get("/expense-vouchers", async (req, res) => {
         ON pa.account_id = ev.payment_account_id
       LEFT JOIN fin.expense_voucher_line evl
         ON evl.expense_voucher_id = ev.expense_voucher_id
+      WHERE ev.branch_id=$1
       GROUP BY
         ev.expense_voucher_id,
+        ev.branch_id,
         ev.voucher_no,
         ev.voucher_date,
         ev.payee_id,
@@ -1077,7 +1144,7 @@ router.get("/expense-vouchers", async (req, res) => {
         ev.created_by,
         ev.created_at
       ORDER BY ev.created_at DESC, ev.voucher_no DESC;
-    `);
+    `,[req.branchId]);
 
     res.json({
       success: true,
@@ -1106,6 +1173,7 @@ router.get("/expense-vouchers/:voucherNo", async (req, res) => {
       `
       SELECT
         ev.expense_voucher_id,
+        ev.branch_id,
         ev.voucher_no,
         ev.voucher_date,
         ev.payee_id,
@@ -1127,9 +1195,9 @@ router.get("/expense-vouchers/:voucherNo", async (req, res) => {
         ON p.party_id = ev.payee_id
       LEFT JOIN fin.gl_account pa
         ON pa.account_id = ev.payment_account_id
-      WHERE ev.voucher_no = $1;
+      WHERE ev.voucher_no = $1 AND ev.branch_id=$2;
       `,
-      [voucherNo]
+      [voucherNo,req.branchId]
     );
 
     if (headerResult.rowCount === 0) {
@@ -1282,6 +1350,7 @@ router.post(
         `
         INSERT INTO fin.expense_voucher (
           expense_voucher_id,
+          branch_id,
           voucher_no,
           voucher_date,
           payee_id,
@@ -1302,13 +1371,15 @@ router.post(
           $5,
           $6,
           $7,
-          'DRAFT',
           $8,
+          'DRAFT',
+          $9,
           now()
         )
         RETURNING *;
         `,
         [
+          req.branchId,
           finalVoucherNo,
           voucher_date,
           payee_id,

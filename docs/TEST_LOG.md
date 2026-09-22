@@ -1,4 +1,4 @@
-﻿# Test and Regression Log
+# Test and Regression Log
 
 ## Test Rules
 - Do not mark a test `PASS` unless actually executed.
@@ -483,3 +483,286 @@ Development only; manual authenticated Delivery browser retest remains required.
 | P19D-RET-UI-STATIC-FE | PASS | `npm.cmd run build` passed; existing large-chunk warning only. |
 | P19D-RET-UI-DIFF | PASS | `git diff --check` passed with normal line-ending warnings only. |
 | P19D-RET-UI-MANUAL | NOT RUN | Authenticated browser View, double-click, partial refund, final refund, overpayment, and unauthorized-user tests remain required. |
+# Phase 24 — Multi-Location Foundation (2026-09-22)
+
+| Check | Status | Notes |
+|---|---|---|
+| Migration / development DB foundation | PASS | `phase_24_multi_location_foundation.sql` applied to documented development `kam_grains_db`; original seven locations retained and FG_STORE default verified. |
+| Soft limit / quarantine guards | PASS | Rollback-only development DB check created temporary branch/warehouse, verified limit rejection and RETURN_QUARANTINE saleable protection, then rolled back. |
+| Locations API smoke / scope | PASS | Admin GET returned 200 with seven locations/default; Sales-role GET for an unassigned location returned 403. |
+| POS and operational authorization matrix | NOT RUN | Branch A/B posting and unauthorized cases remain manual/runtime tests. |
+| Frontend TypeScript | PASS | `npx.cmd tsc -b --pretty false` (2026-09-22). |
+| Frontend build | PASS | `npm.cmd run build` (2026-09-22); existing large-chunk warning. |
+| Backend build / changed-route syntax | PASS | `npm.cmd run build` and `node --check` for changed routes (2026-09-22). |
+| Repository diff check | PASS | `git diff --check` (2026-09-22); line-ending warnings only. |
+| Browser location management/current location | NOT RUN | Setup type/default controls and POS selector are implemented; authenticated browser session required. |
+
+# Phase 25 — Multi-Branch Operations Foundation (2026-09-22)
+
+| Check | Status | Evidence |
+|---|---|---|
+| Phase 25 migration | PASS | Applied to documented development `kam_grains_db`; verified one KAM default branch, eight branch locations including transit, and two active user-branch mappings. |
+| Preservation/backfill | PASS-SCHEMA | Existing location IDs retained; legacy data mapped to KAM under the inspected single-branch history assumption. |
+| Transfer stock/cost/lot SQL path | PASS-ROLLBACK | Development transaction fixture moved 0.001 KG from KAM FG_STORE through KAM transit to a temporary Branch B warehouse; both movement lines retained the same lot and unit cost and transfer reached RECEIVED; the fixture and movements were rolled back. Route-level authorization/API path and no-P&L assertion remain untested. |
+| Browser UI smoke | NOT RUN | Read-only browser inventory showed no open tabs in the Codex in-app browser. No login or browser session was available. |
+| Branch/transfer route runtime | NOT RUN | No authenticated API or browser exercise performed. |
+| POS A/B, SO/Delivery, AR/Receipt | NOT RUN | Branch fixtures and operational posting assertions required. |
+| PO/GRN/AP | NOT RUN | Receiving-branch and accounting assertions required. |
+| Returns/refunds, inventory/counts/adjustments, cleaning | NOT RUN | Isolation and Phase 23 settlement regression required. |
+| Transfers, finance, reports/dashboard | NOT RUN | Lot/cost conservation, balanced finance, branch/consolidated totals required. |
+| Restricted, multi-branch, HQ, single-branch and Phase 4 regressions | NOT RUN | Authenticated user/Branch A/B matrix required. |
+| Backend build | PASS | `npm.cmd run build`; note repository script checks `src/server.js` only. |
+| Frontend TypeScript/build | PASS | `npx.cmd tsc -b --pretty false` and `npm.cmd run build` passed after fixing operating-context query typing; Vite emitted the existing >500 kB chunk warning. |
+| Changed route syntax | PASS | `node --check` passed for branches, transfers, locations, POS, Sales Orders, Purchase Orders, and location access middleware. |
+| `git diff --check` | PASS | Completed with normal Git line-ending warnings only. |
+| Production/deployment/commit | NOT TOUCHED | Development DB only; no deployment or commit. |
+
+
+## Phase 5 Acceptance — Runtime, Security and Regression Validation — 2026-09-22
+
+| Area | Status | Evidence / remaining work |
+|---|---|---|
+| Controlled A/B context fixture | PASS-ROLLBACK | Development-only transaction created temporary Branch A/B, SHOP and WAREHOUSE each, restricted and multi-branch assignments, and identical 0.001 KG product/lot/cost stock rows. Scope queries returned 1 branch/1 location for restricted and 2/2 for multi-branch user. Transaction rolled back; no fixtures retained. SQL fixture evidence only, not authenticated API/UI proof. |
+| Branch/location selector and defaults | NOT RUN | No authenticated browser session; switching/refetch and single-branch UX remain pending. |
+| Read-route security code audit | PASS-CODE / API PENDING | Added guards/scopes for POS, SO/PO (existing), delivery, AR/AP invoices/payments, GRN, journals/expense vouchers, inventory/movements, counts/adjustments, cleaning and customer returns/refunds. Direct cross-branch UUID/query attack tests have not been exercised through authenticated HTTP. |
+| Inactive branch/location guard | PASS-CODE / API PENDING | Shared context middleware now requires requested/default branches and any requested locations' owning branches to be active. Inactive/wrong-branch/transit/quarantine endpoint attacks have not been exercised through authenticated HTTP. |
+| Write-route security | PASS-CODE / API PENDING | Request branch/location scope and source-record guards added to touched routes. Cross-branch create/post/receive/adjust/refund attacks, inactive/wrong-branch/transit/quarantine location rejection, and double receive remain untested via HTTP. |
+| AR payment application boundary | PASS-CODE / API PENDING | Source-derived branch/location validation added before receipt allocation; authenticated attack test pending. |
+| AP payment application boundary | PASS-CODE / API PENDING | Source-derived GRN branch/location validation inspected; API test pending. |
+| POS A/B sale and Phase 4 regression | NOT RUN | No API/browser sale; branch attribution, stock isolation, lot/cost, finance, AR, reporting and void/receipt regression unproven. |
+| SO / Delivery / AR / Receipt | NOT RUN | No end-to-end API/browser test. |
+| PO / GRN / AP / AP payment | NOT RUN | No end-to-end receiving/accounting test. |
+| Customer returns / refund / quarantine | NOT RUN | Route scope reviewed and patched; return, settlement, permission, stock and audit regression not run. |
+| Transfer conservation | PASS-ROLLBACK (SQL) | Prior test transferred 0.001 KG KAM FG_STORE → source transit → temporary Branch B warehouse, retaining lot/cost and RECEIVED state, then rolled back. No journal/P&L assertion or route/API authorization test was recorded; zero P&L is not certified. |
+| Inventory counts / adjustments | NOT RUN | No workflow run. |
+| Cleaning | PASS-CODE / API PENDING | Final route audit found list, summary, detail, create, post and delete service methods omitted branch/location scope. Added current-branch and user-location constraints plus active-location checks for writes; authenticated workflow and cost/quantity regression remain untested. |
+| Expense / finance dimensions | PASS-CODE / API PENDING | Expense voucher and payment headers persist branch IDs; journal list scoped. Branch dimensions through Delivery, GRN, refund and posting are not comprehensively proven. |
+| Branch P&L / reporting | BLOCKED BY SAFE GATING | General reports, finance aggregates, Dashboard and GRN variance remain HEAD_OFFICE-only because underlying SQL branch filters are unproven. No branch/consolidated totals were validated. |
+| Audit trail dimensions | NOT RUN | Assignment, sale, delivery, refund, transfer and adjustment audit records not inspected end-to-end. |
+| Number uniqueness | NOT RUN / GAP | Global uniqueness across concurrent branches was not audited. Existing numbering unchanged; not certified. |
+| Master data level | PASS-DESIGN | Products, customers, suppliers, units, categories and chart of accounts remain company-shared by design; workflow integrity pending. |
+| Admin UI | PASS-CODE / BROWSER PENDING | Setup branch/location assignment panel added using existing APIs; save/default/role behavior not browser-tested. |
+| Frontend TypeScript | PASS | `npx.cmd tsc -b --pretty false` passed (2026-09-22). |
+| Frontend build | PASS | `npm.cmd run build` passed (2026-09-22); existing large bundle warning. |
+| Backend build | PASS | `npm.cmd run build` passed; script checks `src/server.js` only. |
+| Route syntax | PASS | `node --check` passed for every backend route and locationAccess middleware. |
+| `git diff --check` | PASS | Passed after trailing blank lines were removed; normal LF/CRLF notices only. |
+| Production / deployment / commit | NOT TOUCHED | Development only; no deployment or commit. |
+
+### Manual Browser Acceptance Checklist
+
+1. Verify the branch selector and the locations shown for the selected branch.
+2. Sign in as a restricted user and confirm only assigned branch/location data is visible.
+3. Sign in as a multi-branch user, switch A↔B, and confirm the selected location follows.
+4. Sign in as HEAD_OFFICE and confirm cross-branch access still follows endpoint permissions.
+5. Post a POS sale in A and then B; confirm stock isolation and correct branch context.
+6. Dispatch a transfer and receive it with an authorized destination-branch user.
+7. Switch branches on Inventory and confirm rows refresh without stale values.
+8. Switch branches on Reports and confirm only supported branch-safe reports are available.
+9. Switch branches on Dashboard and confirm each branch's scoped totals refresh without stale values.
+10. In Setup, assign/revoke a user branch and location, change defaults, then reload and verify.
+11. As restricted user, try a known Branch B document/location URL or submission and confirm denial.
+12. Confirm one-branch KAM navigation and POS/order/return pages remain usable without extra branch steps.
+
+### 2026-09-22 — Dashboard Branch-Scoping Fix
+
+| Check | Status | Evidence / limitation |
+|---|---|---|
+| Dashboard endpoint and metrics review | PASS (code review) | `GET /api/dashboard/summary`; inventory, sales, AR, AP, cash, income/expense, cleaning, PO, GRN, deliveries, recent stock movements/invoices/receipts, and four operational alert counts. |
+| Branch query attribution | PASS (code review) | Inventory by active saleable stock-holding location; sales/AR by invoice delivery or credit-POS source location; AP by AP invoice→GRN→location; GL by journal branch; cleaning by both raw/finished locations; PO by PO branch; GRN/delivery by location; movements by from/to locations; receipts by payment branch; alerts by source branch/location. |
+| Development schema evidence | PASS (read-only inspection) | `sal.pos_sale` has `location_id` and no `branch_id`; `inv.v_stock_on_hand` exposes location; GL journals currently have branch attribution. No migration/view change required. |
+| Restricted Branch A API returns 200 | NOT RUN | No authenticated API session/token available in this execution. |
+| Restricted Branch A requesting Branch B returns 403 | NOT RUN | No authenticated API session/token available. Middleware rejects unauthorized branch IDs; endpoint rejects query/header mismatch. |
+| HEAD_OFFICE selected branch / consolidated | CODE REVIEW | HEAD_OFFICE still needs `VIEW_ONLY`; selected branch is returned. No consolidated mode exists in the Dashboard UI. |
+| A↔B selector switch/refetch | CODE REVIEW | Shared operating context provides branch ID; Dashboard query key includes branch ID and API sends it in both query and header. |
+| Branch A/B distinguishable fixture | NOT RUN | No A/B operational data fixture was created for this targeted fix. |
+| Backend build | PASS | `npm.cmd run build` passed (script runs `node --check src/server.js`). |
+| Frontend TypeScript | PASS | `npx.cmd tsc -b --pretty false` passed. |
+| Frontend build | PASS | `npm.cmd run build` passed; Vite reports the existing >500 kB chunk warning. |
+| `git diff --check` | PASS | No whitespace errors; standard LF/CRLF notices only. |
+| Manual browser Dashboard retest | REQUIRED | Authenticated visual/API retest remains outstanding. |
+
+### 2026-09-22 — Ambiguous Locations Query Fix
+
+| Check | Status | Evidence / limitation |
+|---|---|---|
+| Location query qualification | PASS | All selected `app.location l` fields use `l.`; branch display columns use `b.`. Ambiguous original names were `company_id`, `branch_id`, `is_active`, `address`, `phone`, `email`, `created_at`, `updated_at`. |
+| Exact SQL against development DB | PASS (read-only SQL) | Ran the fixed endpoint SELECT with supplied user `235bcfd6-bef8-4103-ad29-7a41f04d2fd4`, branch `7739b68b-6f16-4f67-9713-b29b2748d46e`, and restricted-scope flags; returned seven authorized active location rows with branch code KAM. This was a direct SQL check, not an authenticated HTTP request. |
+| Locations endpoint authenticated HTTP result | NOT RUN | Current browser session has no open authenticated browser tab/session. |
+| Location defaults/selector | CODE REVIEW | Shared operating context selects an authorized stored location, branch/company default, user default, saleable location, then first authorized location; the header offers a selector when multiple authorized locations are available. No unauthorized fallback is introduced. |
+| No authorized location | CODE REVIEW | Operating context remains `currentLocation: null`; app shell now displays “No authorized operating location is configured for this branch” with Setup guidance. GET locations suppresses raw database error details. |
+| Similar Phase 24/25 joins | REVIEWED | `stockTransfers.routes.js` qualifies joined location/branch fields. `branches.routes.js` qualifies both branch and location fields. No other confirmed ambiguous select list found in searched location/branch joins. |
+| Dashboard retest | NOT RUN | No authenticated browser/API session available. Dashboard runtime PASS is not claimed. |
+| Backend build | PASS | `npm.cmd run build` passed; `node --check src/routes/locations.routes.js` also passed. |
+| Frontend TypeScript | PASS | `npx.cmd tsc -b --pretty false` passed. |
+| Frontend build | PASS | `npm.cmd run build` passed; Vite reports the existing >500 kB bundle warning. |
+| `git diff --check` | PASS | No whitespace errors; standard LF/CRLF notices only. |
+# Phase 5 reporting/finance + POS A/B acceptance — 2026-09-22
+
+| Acceptance item | Result | Evidence / limit |
+|---|---|---|
+| General Ledger branch SQL | PASS (direct read-only DB query) | 2,058 rows for selected KAM branch. Authenticated HTTP response NOT RUN. |
+| Trial Balance branch SQL | PASS (direct read-only DB query) | 22 rows; debit and credit totals each 179,367,827.10; difference 0. Authenticated HTTP response NOT RUN. |
+| Profit & Loss branch SQL | PASS (direct read-only DB query) | 13 rows; income 30,333,141.60; expenses 28,275,624.70; net profit 2,057,516.90. Account 5000 is treated as COGS; no non-operating classification exists, so operating profit equals net profit. |
+| Balance Sheet branch SQL | PASS (direct read-only DB query) | 22 rows; assets 334,947.20; liabilities plus equity including calculated current earnings 334,947.20 (floating-point difference under 0.000001). Shared chart balances are not allocated. |
+| Cashbook branch SQL | PASS (direct read-only DB query) | 383 rows. Authenticated HTTP response NOT RUN. |
+| Customer weekly performance | PASS (direct read-only DB query) | 1 grouped row for the selected week/branch. Authenticated HTTP response NOT RUN. |
+| Dormant customers | PASS (direct read-only DB query) | 42 rows. Authenticated HTTP response NOT RUN. |
+| Customer RFM | PASS (direct read-only DB query) | 42 rows. Authenticated HTTP response NOT RUN. |
+| Weekly sales by product | PASS (direct read-only DB query) | 1 grouped row. Authenticated HTTP response NOT RUN. |
+| Weekly purchases by product | PASS (direct read-only DB query) | 0 rows for the selected week, valid empty result. Authenticated HTTP response NOT RUN. |
+| Weekly profit by product | PASS (direct read-only DB query) | 1 grouped row. Authenticated HTTP response NOT RUN. |
+| Weekly management summary | PASS (direct read-only DB query) | 1 summary row. Authenticated HTTP response NOT RUN. |
+| Unified event branch attribution | PASS (direct read-only DB query) | KAM: 261 delivery lines, 33 POS lines, 5 return lines. |
+| POS posted journal branch attribution | PASS (direct read-only DB query) | 33 posted sales; 0 mismatched journal branch IDs. |
+| POS Branch A/B sale, stock, access-denial, and refresh acceptance | NOT RUN | Development has one active branch and no authenticated browser/API session. No A/B fixture or POS transaction was created. |
+| Customer-concentration and other unlisted consolidated reports | GATED | Existing HEAD_OFFICE-only behavior retained; these endpoints are outside the approved branch-scoped whitelist. |
+| Backend route syntax | PASS | `node --check` passed for finance.routes.js, reports.routes.js, pos.routes.js. |
+| Backend build | PASS | `npm.cmd run build` (backend syntax check) passed. |
+| Frontend TypeScript/build | PASS | `npm.cmd run build` completed TypeScript compilation and Vite production build (2006 modules); existing >500 kB bundle warning. |
+| `git diff --check` | PASS | No whitespace errors; Git emitted routine LF/CRLF notices. |
+| Production/deployment/commit | NOT PERFORMED | Migration applied only to configured development DB; no deployment or commit. |
+# Phase 5 authenticated multi-branch acceptance — 2026-09-22
+
+**Overall: IN PROGRESS — NOT ACCEPTED.** Tests used real `/api/auth/login` bearer sessions against an isolated development API on port 3301 and development database `kam_grains_db` (`localhost:5432`). Production was not accessed; no deployment or commit was made. No browser session was available, so browser/UI acceptance remains pending.
+
+| Acceptance item | Status | Evidence / limits |
+|---|---|---|
+| Development environment | PASS | Current database confirmed `kam_grains_db` on localhost:5432; prior environment logs designate it development. |
+| Branch fixtures | PASS | A KAM `7739b68b-6f16-4f67-9713-b29b2748d46e`; B TEST_B `53a7ca12-e6a5-4a2d-a356-94d4a448c1b8`; B locations TEST_B_SHOP `e15e6e72-d589-4e6e-82a4-d696ae5b88e9`, TEST_B_STORE `8022a0e3-0bc2-4bf8-ac85-d35fb2203be5`. Existing FG_STORE retained; TRANSIT and RETURN_QUARANTINE remained non-saleable. |
+| Test users | PASS (API) | Temporary test users created for A-only, B-only, multi-branch and A SALES-only. HEAD_OFFICE suitable test account not available. Temporary users must be disabled after the tests. |
+| Product and baseline | PASS | Shared test product `PHASE5-AB-TEST` (`219a3793-824b-4828-b0bd-ec2c4525520e`), unit cost 1,000, sale price 2,500; A lot `32ca0e77-553e-42f4-83d9-33a01d3ce1b5` baseline 10.000; B lot `fbbedfb1-8fd5-47b6-828e-fe0720ee3664` baseline 20.000. |
+| Context and location A/B authorization | PASS (authenticated API) | 70-check matrix: A and B users each received only their own branch and authorized locations; opposite-branch context/location requests returned 403. Multi user selected both. |
+| Dashboard A/B | PASS (authenticated API) | Own branch 200; opposite branch 403 for each restricted account. |
+| Finance reports A/B | PASS (authenticated API) | Trial Balance, P&L, Balance Sheet, Cashbook own branch 200; opposite branch 403, both users. Finance summary represented by branch-scoped Dashboard summary. |
+| Seven weekly reports A/B | PASS (authenticated API) | Own branch 200; opposite branch 403 for each restricted account. Product-level A/B transaction reconciliation is recorded below. |
+| POS A sale | PASS (authenticated API) | Sale `POS-20260922-000043`; A stock 10→9, B remained 20; A lot used, 1,000 cost; journal balanced 3,500/3,500 and attributed to A. |
+| POS B sale | PASS (authenticated API) | Sale `POS-20260922-000044`; B stock 20→19, A remained 9; B lot used, 1,000 cost; journal balanced 3,500/3,500 and attributed to B. Numbering globally unique. |
+| POS attack tests | PASS (authenticated API) | A user selecting B shop, A TRANSIT, A RETURN_QUARANTINE, and non-saleable B store received 403; stock unchanged. |
+| Sales → Delivery → AR → Receipt | PASS (authenticated API) | A order `SO-20260922-182958`, delivery `DEL-20260922-182958`, invoice `ARI-20260922-183016`, receipt `RCP-001255`, each posted. Cross-branch reads denied (404/403 according to endpoint). A delivery changed A stock only. Journals balanced and Phase 30 backfilled/attributes their A branch. |
+| PO → GRN → AP → AP payment | PASS (authenticated API + DB reconciliation) | B PO `PO-20260922-183446`, GRN `GRN-20260922-183446`, AP invoice `AP-INV-20260922-00001` ($500), payment `APP-20260922-183643`; invoice PAID and payment POSTED. After Phase 31, GRN, invoice and payment PUR journals all tagged B and balanced 500/500. Cross-branch document-read check remains PENDING. |
+| Return and refund | PASS (authenticated API) | Two A returns of 0.5kg each; restocked to A saleable FG_STORE only. Refunds settled $1,250 each; journals balanced and A-attributed. A SALES-only user refund attempt returned 403. B reads denied. |
+| Transfer A→transit→B | PASS (authenticated API) | Transfer `TRF-20260922-000002`, qty 1, same lot/cost. Dispatch A 8→8, transit 0→1, B unchanged; receive transit 1→0, B 19→20; duplicate receive 409; A-only receive attempt 403. No sales/COGS/P&L event. |
+| Stock count | PASS (authenticated API) | A count `SC-PHASE5-A-20260922-02`, FG_STORE, 20 lines, test item system/count 8.000, variance zero. Left OPEN, not posted. |
+| Stock adjustment | PASS (authenticated API) | B damage adjustment reduced B stock by 0.1 only. Branch B journal balanced 100/100 after Phase 27. |
+| Cleaning | PENDING | No safely bounded end-to-end cleaning run completed. |
+| Multi-branch switch and UI refresh | API PASS / BROWSER PENDING | Multi user sees both branches in authenticated API context. UI switching, location refresh and stale-data behavior not browser-tested. |
+| HEAD_OFFICE / consolidated | PENDING | No suitable isolated HEAD_OFFICE account. No consolidated mode was invented. |
+| Shared masters | PASS (fixture inspection) | Both branches use same test product and shared test customer/supplier master; no branch-specific duplicate master created. Shared chart of accounts remains one chart. |
+| Weekly sales reconciliation | PASS (API and SQL review) | A and B POS documents and source branch attribution verified; transfer did not create sales. Exact post-return net totals not fully asserted in the original report script. |
+| Finance reconciliation | PASS (source-journal checks) | Representative POS, returns/refunds, A sales workflow, and B adjustment attributed to correct branch and balanced. Branch trial balance A/B and consolidated post-transaction total query remains PENDING. |
+| Single-branch and Phase 4 regression | PARTIAL | Quick Sale, AR/Receipt, Return/Refund, quarantine/non-saleable denial and reports exercised via API. Credit POS, Return Policy, browser pages, cleanup and single-branch UI regression remain PENDING. |
+| Defect fixes | PASS (targeted retests) | Transfer middleware cross-branch create exception; Phase 27 inventory journal attribution; Phase 28 return journal attribution; Phase 29 refund field compatibility; Phase 30 SAL journal attribution; AP GRN query qualification; Phase 31 PUR journal attribution. Details in `docs/ERROR_LOG.md`. |
+| Backend build and route syntax | PASS | `npm.cmd run build`; `node --check` on locationAccess, apInvoices, finance, reports and POS route files. |
+| Frontend TypeScript | PASS | `npx.cmd tsc -b --pretty false`. |
+| Frontend build | PASS | `npm.cmd run build` completed TypeScript compilation and Vite production build (2006 modules); existing large-chunk warning (>500kB). |
+| `git diff --check` | PASS | Exit 0; routine LF/CRLF notices only. |
+| Production / deployment / commit | PASS | Production untouched; no deployment and no commit. Retain TEST_B temporarily in development as acceptance evidence. |
+| Test credential cleanup | PASS | All four temporary test users deactivated and local scripts/results/secrets removed. Branch B, transactions, test product/party retained as development evidence. |
+# Phase 5 Extension acceptance — 2026-09-22
+
+**Overall: IMPLEMENTED; RUNTIME APPROVAL REQUIRED.** Authenticated API checks ran against the local development API/database. No browser session was available. No production environment, deployment, or commit was used.
+
+| Acceptance item | Status | Evidence / limit |
+|---|---|---|
+| Branch-wide stock visibility | PASS | A-only user with STOCK_VISIBILITY listed Branch B/locations and read B stock; unit cost was redacted. |
+| Visibility does not grant POS authority | PASS | Same user’s Branch B POS attempt returned 403; Branch B stock did not change. |
+| Request and partial approval | PASS | B request submitted; approval actor/time persisted; 1.2 of 2 requested approved. |
+| Split transfer fulfillment | PASS | A source-only operator dispatched to B; B received 1.0 with SHORT_DELIVERY, then separately received 0.2; ISR reached FULFILLED with 1.2 supplied. |
+| Dispatch/receipt movement and actors | PASS | State, actor and movement flow were verified through authenticated API/DB-backed response. |
+| Duplicate dispatch/receipt | PASS | Repeat attempts returned 409. |
+| Explicit variance | PASS | Unreceived quantity remained in transit in RECEIVED_WITH_VARIANCE; no silent receipt. |
+| Internal accounting | PASS | Company inventory value remained UGX 28,800 and GL journal count remained 971; no internal-transfer finance posting. |
+| Procurement policy | PASS | LOCAL_WITH_APPROVAL held PO and blocked GRN until approval; LOCAL_ALLOWED PO opened; CENTRAL_ONLY PO denied while ISR remained allowed; policy restored to HYBRID. |
+| Audit | PASS | Request/transfer audit events with authenticated user context verified. |
+| Reverse Head Office request from Branch B | PENDING | Not exercised. |
+| HYBRID PO→GRN→AP→payment in this extension pass | PENDING | Policy gating checked here; full external purchasing flow is recorded in Phase 5 acceptance sections. |
+| Inventory category selector | PENDING | Branch/location/product search and detail exist; category selector not implemented. |
+| Authenticated browser acceptance | PENDING | No available authenticated browser session. |
+| Changed backend route syntax/build | PASS | node --check on changed route/middleware modules and backend npm build passed. |
+| Frontend TypeScript/build | PASS | npx tsc -b and frontend production build passed; bundler reports a large-chunk warning. |
+| git diff --check | PASS | No whitespace errors after documentation cleanup; routine LF/CRLF conversion notices only. |
+| Production/deployment/commit | NOT PERFORMED | Development only. |
+# Phase 5 Final Closure — 2026-09-22
+
+- Inventory category filter: IMPLEMENTED / STATIC VERIFIED. Uses existing product-category API and inv.product.category_id; supports All Categories, branch, location, and search together without reload.
+- Backend route syntax/build: PASS.
+- Frontend TypeScript: PASS.
+- Frontend build: PASS (existing large-chunk warning).
+- git diff --check: PASS after this update.
+- Browser acceptance: PENDING. Codex browser had zero tabs and no authenticated session.
+
+Manual browser checklist:
+- Inventory: branch, location, category, search, View, double-click.
+- Stock Request: create, submit, approve, partial supply, detail.
+- Transfer: dispatch, partial receipt, full receipt, variance, double-click.
+- Procurement: policy behavior.
+- Reverse HQ Request: create, dispatch, receive.
+
+Reverse Head Office request, reverse authorization, stock before/after, transit remainder UX, procurement browser behavior, single-branch UX, multi-branch switching/stale-data checks remain browser/API acceptance items rather than claimed passes.
+# Phase 5 Final Acceptance — Reverse HQ and Transit UX — 2026-09-22
+
+- Later receipt of unresolved variance: IMPLEMENTED in API/UI. RECEIVED_WITH_VARIANCE can receive only the remaining in-transit quantity; receipt totals accumulate, variance clears when transit reaches zero, and authorization remains destination-scoped.
+- Transfer detail now displays dispatched, received, remaining in transit, variance quantity, variance reason, status, actors, and timestamps.
+- Reverse Head Office request API run: PENDING. The temporary development API process was unavailable during the final scripted attempt; no reverse transaction is claimed.
+- Browser acceptance: BROWSER PENDING. No browser tab or authenticated session was available.
+- Static validation after transit changes: backend build PASS; frontend TypeScript PASS; frontend build PASS; changed transfer route syntax PASS; git diff --check pending after documentation append.
+# Phase 5 Frontend Completion — 2026-09-22
+
+- Sidebar/navigation: PASS-CODE. Internal Stock Requests and Inter-Site Transfers are routed and permission-gated in AppLayout/App.
+- Stock Requests page: PASS-CODE. Existing page provides create draft, submit, approval quantities, request detail, linked transfer creation, View and double-click.
+- Stock Transfers page: PASS-CODE. Existing page provides history, View/double-click, dispatch, receive and duplicate backend protection.
+- Transfer remainder UX: IMPLEMENTED. Detail shows dispatched, received, remaining in transit, variance, reason, status, actors and timestamps. RECEIVED_WITH_VARIANCE exposes Receive Remaining.
+- Later remainder receipt: IMPLEMENTED in backend with remaining-quantity validation and accumulated receipt totals.
+- Reverse HQ request: PENDING. Final authenticated API run could not complete because the temporary development API process was unavailable.
+- Browser acceptance: BROWSER PENDING. No authenticated browser tab/session was available.
+- Inventory category/branch/location/search regression: STATIC PASS; browser PENDING.
+- Procurement policy browser behavior: BROWSER PENDING.
+- Single-branch and multi-branch stale-data browser regression: BROWSER PENDING.
+- Backend build and changed transfer syntax: PASS.
+- Frontend TypeScript/build: PASS.
+- git diff --check: PASS after documentation cleanup.
+# Phase 5 Authentication Timeout Retest — 2026-09-22
+
+- Auth route: POST /api/auth/login.
+- Port/process check: backend configured for localhost:3000; no listener was present on 3001.
+- Direct database timing: sec.login approximately 3,478 ms; user lookup approximately 22 ms; role lookup approximately 94 ms.
+- Direct HTTP retest with kam.admin credentials on configured port 3000: HTTP 200, approximately 4,752 ms, authenticated user returned.
+- Health endpoint: HTTP 200, approximately 611 ms.
+- Root cause: frontend/backend development port mismatch.
+- Browser retest: PENDING; no authenticated browser tab was available.
+# Phase 5 Source-Lot Selection Defect Retest — 2026-09-22
+
+- Source lot endpoint: GET /api/inventory/stock-on-hand with selected branch_id and location_id.
+- Exact development query result for NB-CLEAN: KAM Clean Beans Store contains NBCLN-0018 4.000, NBCLN-0004 5.800, NBCLN-0005 8.000, NBCLN-0006 1.000, NBCLN-0007 9.000, NBCLN-0008 4.800, NBCLN-0009 25.200, NBCLN-0011 16.000. TEST_B currently has no NB-CLEAN stock.
+- Location ownership: Clean Beans Store is KAM, not TEST_B. TEST_B source dropdown now loads only TEST_B locations.
+- Multi-lot allocation: PASS-CODE. Eligible rows are split into separate transfer lines until approved outstanding quantity or available stock is exhausted; no arbitrary lot ID or silent full-quantity claim.
+- Partial availability: PASS-CODE. Available lots can produce a partial transfer and leave request outstanding; backend rechecks availability at creation/dispatch.
+- Transfer/dispatch/receive runtime for this exact NB-CLEAN case: PENDING because TEST_B has zero NB-CLEAN stock.
+- Backend build, changed-route syntax, frontend TypeScript/build: PASS.
+- git diff --check: PASS.
+# Phase 5 Transfer Detail UI Correction — 2026-09-23
+
+- Quantity formatting: PASS-CODE. All operational quantities display to three decimal places without changing database NUMERIC values.
+- Cost formatting: PASS-CODE. Authorized costs display as UGX with two decimals; restricted costs remain hidden.
+- Table layout: PASS-CODE. Transfer detail uses horizontal scrolling, minimum column widths, padding, separate headers and right-aligned numeric cells.
+- State display: PASS-CODE. IN_TRANSIT shows received total and remaining transit; RECEIVED_WITH_VARIANCE shows remaining/variance and Receive Remaining; RECEIVED is read-only with zero remaining.
+- Actor/timestamp/reason/status formatting: PASS-CODE. User names, locale timestamps, and human-readable enum labels are used where available.
+- Sample transfer database comparison: PENDING browser/runtime inspection; no numeric persistence migration was performed.
+- Frontend TypeScript/build: PASS.
+- Backend syntax/build: PASS.
+- git diff --check: PASS.
+- Manual transfer display retest: PENDING.
+# Phase 5 Internal Stock Request Direction UI Fix — 2026-09-23
+
+- Requesting Branch selector: PASS-CODE. Uses assigned branch visibility from the existing branch API.
+- Receiving Location selector: PASS-CODE. Loads active stock-holding locations for the selected requesting branch and clears on branch change.
+- Preferred Source Branch label: PASS-CODE.
+- Payload mapping: PASS-CODE. Sends requesting_branch_id, requesting_location_id, preferred_source_branch_id, product, quantity, priority and request type.
+- History/detail direction: PASS-CODE. Displays requesting branch, receiving location and preferred source.
+- Backend validation: unchanged and still validates branch/location ownership.
+- Reverse HQ and opposite-direction runtime requests: PENDING manual/API acceptance.
+- Frontend TypeScript/build: PASS.
+- Backend syntax/build: PASS.
+- git diff --check: PASS.
+- Browser retest: PENDING.

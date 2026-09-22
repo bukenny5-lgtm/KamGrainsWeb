@@ -355,3 +355,137 @@ Each error entry should include:
 - **Observed:** History View only selected an inline section, there was no discoverable refund action, and refund authorization was not represented in the frontend.
 - **Correction:** Added shared Return Details and Process Refund dialogs, double-click row opening, refund history, normalized status labels, and `PROCESS_REFUND`-gated actions. The backend endpoint remains protected by `requireAuth` and `requirePermission('PROCESS_REFUND')`.
 - **Status:** Implemented in the working tree; authenticated browser and partial/full refund retests remain pending.
+
+## ERR-P5-CLEAN-001 — Cleaning Routes Did Not Enforce Branch/Location Scope — 2026-09-22
+
+- **Observed:** Cleaning list, summary, and batch-number detail/read/write service queries had no branch/location scope. Router middleware validates supplied location IDs but did not protect batch-number lookups.
+- **Correction:** Threaded authenticated branch/user scope into the service layer, filtered list/detail/summary to active-branch locations and assigned locations, checked active authorized source/output locations on create, and scoped post/delete by both batch locations. `created_by` now comes from authenticated request context.
+- **Status:** Corrected in working tree; authenticated cross-branch and cleaning quantity/cost API regression remains pending.
+
+## ERR-P5-CTX-001 — Context Middleware Accepted Inactive Branch IDs — 2026-09-22
+
+- **Observed:** Context checks validated active user-branch grants but did not validate `app.branch.is_active` for explicitly requested/default branches; HEAD_OFFICE could also pass an inactive branch ID.
+- **Correction:** Requested and default branches now resolve through active `app.branch` rows, and requested locations must belong to active branches.
+- **Status:** Corrected in working tree; authenticated inactive-branch API attack remains pending.
+
+## ERR-P5-DASH-001 — Branch Users Received Dashboard 403 — 2026-09-22
+
+- **Observed:** Authenticated `kam.admin` received HTTP 403 with “Branch-filtered dashboard data is not yet available for this account.”
+- **Root cause:** `/api/dashboard/summary` had an intentional `HEAD_OFFICE`-only safety gate while its aggregate queries were unscoped. Removing only the gate would have exposed cross-branch totals.
+- **Correction:** Replaced the role gate with the existing validated operating branch context and branch filters across inventory, source-attributed sales/AR, GRN-attributed AP, GL, cleaning, purchasing, deliveries, stock movements, receipts, and alert queries. Mismatched explicit query/header branch IDs are denied. No consolidated mode is added.
+- **Status:** Code and static acceptance checks are being completed. Authenticated Branch A/Branch B API isolation and browser retest remain pending; no claim of runtime authorization PASS.
+
+## ERR-P5-LOC-001 — Locations Query Failed on Ambiguous Columns — 2026-09-22
+
+- **Observed:** Authenticated location loading returned PostgreSQL `column reference "company_id" is ambiguous` for a query joining `app.location l` and `app.branch b`.
+- **Root cause:** The reusable location select list was unqualified. Several selected names exist on both joined tables: `company_id`, `branch_id`, `is_active`, `address`, `phone`, `email`, `created_at`, and `updated_at`.
+- **Correction:** Added a fully qualified `l.` select list for location fields while retaining `b.` on branch display fields. Branch and user-location authorization predicates are unchanged. The GET handler now returns a generic error message without raw database details; the operating shell shows a controlled message when no authorized location is available.
+- **Status:** Exact query passed read-only PostgreSQL execution using the supplied user and branch IDs and returned seven authorized rows. Authenticated HTTP and browser retests remain pending.
+# Phase 5 reporting/finance + POS acceptance findings — 2026-09-22
+
+- Finance and weekly reporting datasets did not consistently select or expose operating branch. Updated the targeted route queries to derive branch from the journal header or authoritative source location and return selected-branch scope metadata where relevant.
+- POS journal attribution is now synchronized from the sale's location branch on insert/update; the migration backfills existing POS posting/reversal journals. Development data currently shows zero mismatches among 33 posted sales.
+- POS location resolution and stock aggregation now honor the selected branch/location; access to a sale from another active branch is denied even for HEAD_OFFICE with a branch selected.
+- Acceptance blocker: development has one active branch only, so a genuine two-branch POS A/B runtime comparison is unavailable. No authenticated browser/API runtime session was open. These checks remain NOT RUN rather than PASS.
+- Scope limitation: customer-concentration and other non-whitelisted consolidated Reports endpoints remain HEAD_OFFICE-gated. The P&L uses account code 5000 as COGS and has no separate non-operating account classification, so operating profit currently equals net profit.
+# Phase 5 authenticated acceptance defects — 2026-09-22
+
+## ERR-P5-XFER-001 — Authorized inter-branch transfer creation denied
+
+- **Expected:** Multi-branch user creates A→B transfer (201).
+- **Actual:** 403 from generic request-location branch guard; DB had no transfer row.
+- **Root cause:** The guard treated a source and destination location in separate branches as an unauthorized mixed-branch request, including for authorized transfer creation.
+- **Fix/retest:** Narrow exception for transfer creation only when active branch is the source branch and user is granted both branches and exact locations. Retest POST 201, dispatch/receive succeeded; A-only receive denied 403; duplicate receive rejected 409.
+
+## ERR-P5-INVJ-001 — Inventory adjustment journal lacked branch
+
+- **Expected:** B damage adjustment journal tagged B.
+- **Actual:** Posted adjustment journal branch was NULL.
+- **Root cause:** Legacy INV source journal did not derive branch from its source location.
+- **Fix/retest:** Phase 27 trigger/backfill from adjustment location; retest B journal balanced 100/100 and branch B.
+
+## ERR-P5-RETJ-001 — Return journal lacked branch
+
+- **Expected:** A customer return/refund journals tagged A.
+- **Actual:** Return journal branch NULL.
+- **Root cause:** Legacy SAL source attribution did not include customer returns.
+- **Fix/retest:** Phase 28 source-derived return branch trigger/backfill; authenticated subsequent return/refund journal tagged A and balanced.
+
+## ERR-P5-REFUND-001 — Authorized refund settlement rejected due mismatch fields
+
+- **Expected:** Authorized refund posts for returned amount.
+- **Actual:** HTTP 400 although legacy return held `refund_due=1250`.
+- **Root cause:** Settlement read `refund_due_amount`, left zero by legacy return posting.
+- **Fix/retest:** Phase 29 compatibility synchronization/backfill; API settlement returned 200, $1,250, balanced journal and SETTLED status. SALES-only attempt correctly returned 403.
+
+## ERR-P5-SALJ-001 — Delivery, AR invoice and receipt journals lacked branch
+
+- **Expected:** A source journals tagged A.
+- **Actual:** Three SAL journals had NULL `branch_id` after successful authenticated workflow.
+- **Root cause:** Existing attribution covered POS/returns but not delivery, invoice, or payment sources.
+- **Fix/retest:** Phase 30 source-derived attribution and backfill from delivery location/invoice/payment applications; verified the three journal rows tagged A.
+
+## ERR-P5-APGRN-001 — AP invoice creation from GRN returned HTTP 500
+
+- **Expected:** Create invoice from posted GRN (201).
+- **Actual:** HTTP 500 `column reference "location_id" is ambiguous`; no invoice created on initial attempt.
+- **Root cause:** Joined GRN/location SELECT used unqualified duplicate location field names.
+- **Fix/retest:** Qualified GRN fields and location branch field in `apInvoices.routes.js`; authenticated retry created the B invoice.
+
+## ERR-P5-PURJ-001 — GRN and AP invoice journals lacked branch
+
+- **Expected:** B GRN/AP invoice posting journals tagged B.
+- **Actual:** Both PUR journal headers had NULL `branch_id`; AP payment header/journal carried B.
+- **Root cause:** PUR source posting did not derive branch from GRN location or AP invoice GRN.
+- **Fix/retest:** Phase 31 trigger/backfill from GRN location / invoice-linked GRN and payment application; migration applied to development. Verified GRN, invoice and payment source journals all tagged B and balanced 500/500.
+# Phase 5 Extension authenticated acceptance defects — 2026-09-22
+
+## ERR-P5-EXT-001 — Missing permission map import
+- Observed: branch visibility list returned HTTP 500 due to ACTION_ROLES not being defined.
+- Correction: use/import the defined permission map; cross-branch reads passed on retest.
+
+## ERR-P5-EXT-002 — Visibility boolean SQL parameter inference
+- Observed: visibility route returned HTTP 503 due to PostgreSQL boolean parameter type inference.
+- Correction: explicit boolean cast and separate read visibility path; read passed while POS write remained denied.
+
+## ERR-P5-EXT-003 — Audit action violated allowed values
+- Observed: ISR creation failed because audit accepts I/U/D actions only.
+- Correction: use valid audit actions and store operation semantics in the event payload; audit actor checks passed.
+
+## ERR-P5-EXT-004 — Fractional approval inferred as integer
+- Observed: approving quantity 1.2 failed integer parameter conversion.
+- Correction: cast approval quantity as numeric; partial approval and fulfillment passed.
+
+## ERR-P5-EXT-005 — Pending PO status rejected by legacy constraint
+- Observed: LOCAL_WITH_APPROVAL could not create PENDING_APPROVAL under the existing status check.
+- Correction: forward migration 33 extends PO status; pending-to-approved API flow passed.
+
+## ERR-P5-EXT-006 — Branch PATCH used invalid qualified RETURNING list
+- Observed: procurement policy PATCH failed on UPDATE RETURNING aliases.
+- Correction: use valid unqualified column list; policy updates/restoration passed.
+
+## ERR-P5-EXT-007 — Floating-point fractional receipt remainder
+- Observed: 0.2 remainder from 1.2−1.0 was rejected as short due to floating-point comparison.
+- Correction: normalize receipt quantities to three decimals before comparison; second receipt fulfilled the request.
+# ERR-P5-AUTH-001 — Frontend login targeted an unused development port — 2026-09-22
+
+- Observed: browser POST timed out at http://localhost:3001/api/auth/login after 15 seconds.
+- Root cause: frontend/.env.local configured VITE_API_BASE_URL for port 3001, while backend/.env and backend/src/server.js use PORT=3000. No development listener existed on 3001.
+- Verification: direct sec.login completed in approximately 3.5 seconds; user and role queries completed afterward. With the backend running on configured port 3000, direct HTTP login returned 200 in 4,752 ms and the health endpoint returned 200 in 611 ms.
+- Correction: changed frontend/.env.local to http://localhost:3000/api. Frontend timeout was not increased and authentication/security logic was not bypassed.
+# ERR-P5-ISR-LOT-001 — Source location selector used current branch instead of selected branch — 2026-09-22
+
+- Observed: selecting TEST_B in the Internal Stock Request transfer form still showed KAM's Clean Beans Store and then reported no available source lot for NB-CLEAN.
+- Root cause: getLocationsForBranch(sourceBranchId) omitted stock_visibility=true. The locations route therefore preferred the current x-branch-id header and returned the operator's KAM locations.
+- Database evidence: Clean Beans Store belongs to KAM branch 7739b68b-6f16-4f67-9713-b29b2748d46e. TEST_B locations are e15e6e72-d589-4e6e-82a4-d696ae5b88e9 (shop) and 8022a0e3-0bc2-4bf8-ac85-d35fb2203be5 (store). NB-CLEAN stock exists in KAM Clean Beans Store, not TEST_B, so the original no-stock result was correct for TEST_B once location scope is fixed.
+- Correction: source location queries now request the selected branch with stock visibility; source location state is cleared on branch changes and preferred request source IDs are used when present.
+- Allocation correction: transfer preparation now splits across all eligible lots at the selected source location instead of checking only the first lot. Backend source branch, location, lot and quantity revalidation remains authoritative.
+# ERR-P5-TRANSFER-UI-002 — Transfer detail rendered raw numeric/status values — 2026-09-23
+
+- Observed: floating-point artifacts, merged table headers, raw cost precision, UUID actor values, and editable fields labeled Received.
+- Correction: added fixed three-decimal quantity display, UGX money formatting, padded responsive table columns, human-readable status/reason labels, actor-name joins, consistent timestamps, and explicit Receive Now versus Received Total presentation.
+- Persisted numeric precision and transfer state logic were unchanged.
+# ERR-P5-ISR-UI-002 — Request direction was implicit in the creation form — 2026-09-23
+
+- Observed: the form header implied the current branch, but did not expose requesting branch or receiving location selectors; history/detail omitted receiving location.
+- Correction: added authorized requesting-branch and receiving-location selectors, stale-location clearing on branch changes, explicit Preferred Source Branch labeling, and backend branch/location display fields.

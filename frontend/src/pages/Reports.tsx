@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useOperatingContext } from "@/lib/operatingContext";
 import {
   BarChart3,
   Boxes,
@@ -203,6 +204,8 @@ function formatCell(column: string, value: unknown) {
 }
 
 export default function Reports() {
+  const operating = useOperatingContext();
+  const branchId = operating.currentBranch?.branch_id || "";
   const [selectedReport, setSelectedReport] = useState("stock-on-hand");
   const [search, setSearch] = useState("");
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
@@ -213,113 +216,113 @@ export default function Reports() {
 
   // Existing reports
   const stockQuery = useQuery({
-    queryKey: ["reports-stock-on-hand"],
+    queryKey: ["reports-stock-on-hand", branchId],
     queryFn: () => getStockOnHand(),
   });
 
   const movementsQuery = useQuery({
-    queryKey: ["reports-stock-movements"],
+    queryKey: ["reports-stock-movements", branchId],
     queryFn: getStockMovements,
   });
 
   const grnQuery = useQuery({
-    queryKey: ["reports-grn-summary"],
+    queryKey: ["reports-grn-summary", branchId],
     queryFn: getGoodsReceiptSummary,
   });
 
   const cleaningQuery = useQuery({
-    queryKey: ["reports-cleaning-summary"],
+    queryKey: ["reports-cleaning-summary", branchId],
     queryFn: getCleaningBatchSummary,
   });
 
   const deliveriesQuery = useQuery({
-    queryKey: ["reports-deliveries"],
+    queryKey: ["reports-deliveries", branchId],
     queryFn: getDeliveries,
   });
 
   const arInvoicesQuery = useQuery({
-    queryKey: ["reports-ar-invoices"],
+    queryKey: ["reports-ar-invoices", branchId],
     queryFn: getArInvoiceSummary,
   });
 
   const arPaymentsQuery = useQuery({
-    queryKey: ["reports-ar-payments"],
+    queryKey: ["reports-ar-payments", branchId],
     queryFn: getArPaymentSummary,
   });
 
   const apInvoicesQuery = useQuery({
-    queryKey: ["reports-ap-invoices"],
+    queryKey: ["reports-ap-invoices", branchId],
     queryFn: getApInvoiceSummary,
   });
 
   const apPaymentsQuery = useQuery({
-    queryKey: ["reports-ap-payments"],
+    queryKey: ["reports-ap-payments", branchId],
     queryFn: getApPaymentSummary,
   });
 
   const expensesQuery = useQuery({
-    queryKey: ["reports-expense-vouchers"],
+    queryKey: ["reports-expense-vouchers", branchId],
     queryFn: getExpenseVouchers,
   });
 
   const trialBalanceQuery = useQuery({
-    queryKey: ["reports-trial-balance"],
+    queryKey: ["reports-trial-balance", branchId],
     queryFn: getTrialBalanceReport,
   });
 
   const profitLossQuery = useQuery({
-    queryKey: ["reports-profit-loss"],
+    queryKey: ["reports-profit-loss", branchId],
     queryFn: getProfitAndLossReport,
   });
 
   const balanceSheetQuery = useQuery({
-    queryKey: ["reports-balance-sheet"],
+    queryKey: ["reports-balance-sheet", branchId],
     queryFn: getBalanceSheetReport,
   });
 
   const cashbookQuery = useQuery({
-    queryKey: ["reports-cashbook"],
+    queryKey: ["reports-cashbook", branchId],
     queryFn: getCashbookReport,
   });
 
   // NEW: Business reports with week parameter
   const customerWeeklyQuery = useQuery({
-    queryKey: ["reports-customer-weekly-performance", weekDateStr],
+    queryKey: ["reports-customer-weekly-performance", branchId, weekDateStr],
     queryFn: () => getCustomerWeeklyPerformance(weekDateStr),
   });
 
   const dormantCustomersQuery = useQuery({
-    queryKey: ["reports-dormant-customers", weekDateStr],
+    queryKey: ["reports-dormant-customers", branchId, weekDateStr],
     queryFn: () => getDormantCustomers(weekDateStr),
   });
 
   const rfmAnalysisQuery = useQuery({
-    queryKey: ["reports-customer-rfm", weekDateStr],
+    queryKey: ["reports-customer-rfm", branchId, weekDateStr],
     queryFn: () => getCustomerRfmAnalysis(weekDateStr),
   });
 
   const weeklySalesQuery = useQuery({
-    queryKey: ["reports-weekly-sales-by-product", weekDateStr],
+    queryKey: ["reports-weekly-sales-by-product", branchId, weekDateStr],
     queryFn: () => getWeeklySalesByProduct(weekDateStr),
   });
 
   const weeklyPurchasesQuery = useQuery({
-    queryKey: ["reports-weekly-purchases-by-product", weekDateStr],
+    queryKey: ["reports-weekly-purchases-by-product", branchId, weekDateStr],
     queryFn: () => getWeeklyPurchasesByProduct(weekDateStr),
   });
 
   const weeklyProfitQuery = useQuery({
-    queryKey: ["reports-weekly-profit-by-product", weekDateStr],
+    queryKey: ["reports-weekly-profit-by-product", branchId, weekDateStr],
     queryFn: () => getWeeklyProfitByProduct(weekDateStr),
   });
 
   const managementSummaryQuery = useQuery({
-    queryKey: ["reports-weekly-management-summary", weekDateStr],
+    queryKey: ["reports-weekly-management-summary", branchId, weekDateStr],
     queryFn: () => getWeeklyManagementSummary(weekDateStr),
   });
 
   const concentrationQuery = useQuery({
-    queryKey: ["reports-customer-concentration", weekDateStr],
+    queryKey: ["reports-customer-concentration", branchId, weekDateStr],
     queryFn: () => getCustomerConcentration(weekDateStr),
   });
 

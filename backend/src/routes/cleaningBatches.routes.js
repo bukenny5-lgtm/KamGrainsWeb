@@ -11,8 +11,10 @@ import {
 
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission } from "../middleware/permissions.js";
+import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
 
 const router = express.Router();
+router.use(requireAuth, requireLocationAccessWhenSpecified);
 
 router.get("/", getCleaningBatches);
 

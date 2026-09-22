@@ -202,3 +202,71 @@
 - **Decision:** The refund UI uses the existing `PROCESS_REFUND` role mapping and `/customer-returns/:id/refund` endpoint. It does not expose GL account selection or create a parallel accounting path.
 - **Reason:** Refunds are financially sensitive; backend authorization and configured payment-account mapping must remain authoritative.
 - **Consequence:** Admin/Manager/Finance users can access the action when a posted return has remaining due. Other users can view details but do not receive an active refund action. Manual UI acceptance remains required.
+# ADR-0025 — One Business, Multiple Typed Locations
+
+- **Date:** 2026-09-22
+- **Decision:** Extend `app.location`; use a company default and `sec.user_location` assignments; retain role permissions separately. Default the soft guard to 50 active non-system locations.
+- **Reason:** Existing POS, delivery, purchase, return, and stock records already reference location IDs and must retain their historical meaning.
+- **Consequence:** RETURN_QUARANTINE remains system-managed and non-saleable. Internal transfers and transit receipt confirmation remain pending; future EFRIS branch mapping and pharmacy use cases can extend the model without credentials or medicine-specific data now.
+
+## ADR-0026 — One Company, Branches, and Branch-Owned Locations
+
+- **Date:** 2026-09-22
+- **Decision:** Retain the existing company and location model, add `app.branch` as the operational/security/reporting unit, and require each active location to belong to one branch. Preserve existing KAM location IDs and backfill them to one default branch.
+- **Security:** Role permissions, `sec.user_branch`, and subordinate `sec.user_location` are separate checks. Only explicit `HEAD_OFFICE` bypasses branch membership for cross-branch reads; transactions require a concrete branch.
+- **Transfers:** Each dispatch branch has a system, non-saleable TRANSIT location. Receipt moves stock from that transit to the destination branch/location. No GL/P&L entry is created for transfer movements.
+- **Master data/numbering:** Product/customer/supplier data and ledger remain company-wide. Existing document-number logic is retained; branch-safe uniqueness and future centralized numbering require validation before multi-branch launch.
+- **Acceptance:** Schema/context/API foundation is not operational completion; branch isolation and consolidated reporting still require runtime proof.
+
+
+## ADR-0027 — Fail Closed on Legacy Reports Without Branch Dimensions
+
+- **Date:** 2026-09-22
+- **Status:** Accepted for Phase 5 development hardening.
+- **Decision:** Keep legacy dashboard, aggregate finance/general reports, and GRN variance inaccessible to non-HEAD_OFFICE users until their SQL sources are demonstrably branch-filterable. HEAD_OFFICE access still requires each endpoint's normal permission.
+- **Reason:** Frontend branch selectors cannot secure or correctly partition consolidated SQL views that lack branch attribution.
+- **Consequence:** Branch dashboard/report acceptance remains pending; do not claim per-branch P&L or consolidated correctness from this interim gate.
+
+## ADR-0028 — Dashboard Uses the Selected Operating Branch
+
+- **Date:** 2026-09-22
+- **Decision:** Dashboard summary queries use the validated selected/default branch for every user. HEAD_OFFICE remains subject to the endpoint permission and does not get implicit consolidated totals; the current Dashboard has no consolidated-mode control.
+- **Attribution:** Use source document location/branch dimensions for operational figures and `gl_journal.branch_id` for finance. If any journal has no branch attribution, cash and P&L cards are unavailable rather than partial.
+- **Reason:** Releasing the old role gate is safe only when each query has a concrete branch attribution path and the current UI requests one branch.
+- **Consequence:** Authenticated A/B API isolation and manual browser retest remain acceptance requirements; this code change alone is not runtime proof.
+# Phase 5 finance/reporting scope decisions — 2026-09-22
+
+- Finance and the seven explicitly branch-scoped weekly reports operate on the currently selected branch for every user, including HEAD_OFFICE. These endpoints do not offer an implicit consolidated view; other unscoped legacy/consolidated report endpoints retain their HEAD_OFFICE gate.
+- POS stock and sale operations follow the selected operating branch/location. POS journals inherit the authoritative branch from the sale's location, including reversals.
+- The Balance Sheet includes calculated current earnings for the selected branch because journal balances are not necessarily closed into equity. The account chart is shared across branches; the endpoint warns that company-wide balances are not allocated to branches.
+- P&L classifies account code 5000 as COGS. With no separate non-operating classification in the current chart, operating profit equals net profit. Revisit when account classifications are defined.
+# Phase 5 acceptance decisions — 2026-09-22
+
+- Keep TEST_B, locations, and transaction evidence in development until Phase 5 receives final user approval; do not expose these fixtures in production.
+- Preserve the shared chart of accounts and current P&L classification model. Non-operating classification remains deferred; acceptance did not redesign finance classification.
+- Derive branch for source-module journals from authoritative originating documents (Phase 30 SAL and Phase 31 PUR); payment documents with an explicit branch retain that source where applicable.
+- Leave the existing `PHASE5-AB-TEST` product and shared test party clearly identified as test masters; no branch-specific master duplication.
+- Do not claim overall acceptance until the pending authenticated/browser/regression items in `docs/TEST_LOG.md` are closed.
+# Phase 5 Extension Decisions — 2026-09-22
+
+- Cross-branch inventory visibility is a read capability and does not modify operating branch/location authorization used by transactions.
+- Cost visibility is separate. Internal requests do not force lot selection; source selects lot at transfer preparation.
+- Internal replenishment uses an ISR and stock transfer. Head Office is a company location, never a supplier; internal transfers create no AP/AR/GL/P&L entries.
+- Partial receipt requires a variance reason. Unreceived quantity remains explicitly in transit as RECEIVED_WITH_VARIANCE pending resolution.
+- Default procurement policy is HYBRID. LOCAL_WITH_APPROVAL holds POs in PENDING_APPROVAL until approved; CENTRAL_ONLY blocks supplier PO creation but allows internal requests.
+- Keep accessible View actions alongside row double-click. Browser and reverse Head Office runtime cases remain pending.
+## Phase 5 Final Closure Decisions — 2026-09-22
+
+- Inventory category filtering reuses the existing product-category API and product foreign key; no duplicate category logic was introduced.
+- Browser-dependent acceptance is recorded as PENDING when no authenticated browser tab is available. API/static results are not promoted to browser PASS.
+- The existing explicit variance/transit model remains unchanged: unreceived stock stays in transit and is not silently written off.
+## Phase 5 Final Acceptance Update — 2026-09-22
+
+- A short-delivery transfer remains unresolved until the remaining in-transit quantity is received; subsequent receipt is allowed only for that remainder and uses the destination authorization path.
+- No write-off was introduced. A confirmed loss remains an explicit variance requiring a future controlled workflow.
+- Reverse Head Office and browser results stay PENDING when the development API/browser session is unavailable.
+## Phase 5 Frontend Completion Decisions — 2026-09-22
+
+- Existing Stock Requests and Inter-Site Transfers screens are the repository-equivalent operational pages; no duplicate pages or endpoints were introduced.
+- Transfer UI keeps View and row double-click as separate access paths and makes unresolved transit explicit.
+- Browser acceptance remains PENDING when no authenticated browser tab exists; static/API evidence is not promoted to browser PASS.

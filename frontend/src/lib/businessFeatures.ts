@@ -13,6 +13,7 @@ export const BUSINESS_FEATURE_FALLBACK: BusinessFeatures = {
   reports: true,
   pos: false,
   barcode: false,
+  MULTI_LOCATION: false,
 };
 
 export function useBusinessFeatures() {

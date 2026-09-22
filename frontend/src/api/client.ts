@@ -74,6 +74,10 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  const branchId = localStorage.getItem("kam_grains_current_branch");
+  const locationId = localStorage.getItem("kam_grains_current_location");
+  if (branchId) config.headers["x-branch-id"] = branchId;
+  if (locationId) config.headers["x-location-id"] = locationId;
 
   return config;
 });
@@ -116,8 +120,10 @@ export async function updateBusinessFeatures(payload: UpdateBusinessFeaturesPayl
   return response.data;
 }
 
-export async function getDashboardSummary() {
-  const response = await api.get("/dashboard/summary");
+export async function getDashboardSummary(branchId?: string) {
+  const response = await api.get("/dashboard/summary", {
+    ...(branchId ? { params: { branch_id: branchId }, headers: { "x-branch-id": branchId } } : {}),
+  });
   return response.data;
 }
 
@@ -446,6 +452,66 @@ export async function getLocations() {
   return response.data;
 }
 
+export async function getLocationsForBranch(branchId: string, stockVisibility = false) {
+  const response = await api.get("/locations", { params: { branch_id: branchId, ...(stockVisibility ? { stock_visibility: true } : {}) } });
+  return response.data;
+}
+
+export async function getOperatingContext(branchId?: string | null) {
+  const response = await api.get("/branches/context", { params: branchId ? { branch_id: branchId } : undefined });
+  return response.data;
+}
+
+export async function getBranches(stockVisibility = false, requestSources = false) {
+  const response = await api.get("/branches", { params: { ...(stockVisibility ? { stock_visibility: true } : {}), ...(requestSources ? { request_sources: true } : {}) } });
+  return response.data;
+}
+
+export async function getBranchAccessAdmin() {
+  const response = await api.get("/branches/access-admin");
+  return response.data;
+}
+
+export async function createBranch(payload: ApiPayload) {
+  const response = await api.post("/branches", payload);
+  return response.data;
+}
+
+export async function updateBranch(branchId: string, payload: ApiPayload) {
+  const response = await api.patch(`/branches/${encode(branchId)}`, payload);
+  return response.data;
+}
+
+export async function setUserBranchAccess(userId: string, branchId: string, payload: ApiPayload) {
+  const response = await api.put(`/branches/${encode(branchId)}/users/${encode(userId)}`, payload);
+  return response.data;
+}
+
+export async function setDefaultBranch(branchId: string) {
+  const response = await api.put(`/branches/default/${encode(branchId)}`);
+  return response.data;
+}
+
+export async function getStockTransfers(params: { branch_id?: string; status?: string } | string | null = {}) {
+  const response = await api.get("/stock-transfers", { params: typeof params === "string" ? { branch_id: params } : params||undefined });
+  return response.data;
+}
+
+export async function createStockTransfer(payload: ApiPayload) {
+  const response = await api.post("/stock-transfers", payload);
+  return response.data;
+}
+
+export async function dispatchStockTransfer(id: string) {
+  const response = await api.post(`/stock-transfers/${encode(id)}/dispatch`);
+  return response.data;
+}
+
+export async function receiveStockTransfer(id: string, lines?: ApiPayload[]) {
+  const response = await api.post(`/stock-transfers/${encode(id)}/receive`, lines ? { lines } : {});
+  return response.data;
+}
+
 export async function getLocationById(locationId: string) {
   const response = await api.get(`/locations/${encode(locationId)}`);
   return response.data;
@@ -458,6 +524,16 @@ export async function createLocation(payload: ApiPayload) {
 
 export async function updateLocation(locationId: string, payload: ApiPayload) {
   const response = await api.patch(`/locations/${encode(locationId)}`, payload);
+  return response.data;
+}
+
+export async function setDefaultLocation(locationId: string) {
+  const response = await api.put(`/locations/default/${encode(locationId)}`);
+  return response.data;
+}
+
+export async function setUserLocationAccess(userId: string, locationId: string, payload: ApiPayload) {
+  const response = await api.put(`/locations/${encode(locationId)}/access/${encode(userId)}`, payload);
   return response.data;
 }
 
@@ -623,14 +699,14 @@ export async function testApiPaymentChannelAction(
 // ===============================
 
 export async function getStockOnHand(
-  options: boolean | { include_closed?: boolean } = false
+  options: boolean | { include_closed?: boolean; branch_id?: string | null; location_id?: string | null; category_id?: string | null } = false
 ) {
   // FIX (Phase 4): was /inventory-reports/stock-on-hand which returns ALL
   // ACTIVE lots including qty=0 (16 rows). /inventory/stock-on-hand joins
   // inv.lot directly and returns only lots with qty > 0 (6 rows) with the
   // correct lot_status field that the InventoryStock page needs.
   const response = await api.get("/inventory/stock-on-hand", {
-    params: { include_closed: includeClosedValue(options) },
+    params: typeof options === "boolean" ? { include_closed: options } : { ...options, include_closed: includeClosedValue(options) },
   });
   return response.data;
 }
@@ -640,6 +716,35 @@ export async function getStockMovements() {
   return response.data;
 }
 
+export async function getStockDetail(productId: string, locationId: string, lotId?: string | null, branchId?: string | null) {
+  const response = await api.get("/inventory/stock-detail", { params: { product_id: productId, location_id: locationId, lot_id: lotId || undefined, branch_id: branchId || undefined } });
+  return response.data;
+}
+
+export async function getInternalStockRequests(branchId?: string | null) {
+  const response = await api.get("/internal-stock-requests", { params: branchId ? { branch_id: branchId } : undefined });
+  return response.data;
+}
+export async function getInternalStockRequest(id: string) {
+  const response = await api.get(`/internal-stock-requests/${encode(id)}`);
+  return response.data;
+}
+export async function createInternalStockRequest(payload: ApiPayload) {
+  const response = await api.post("/internal-stock-requests", payload);
+  return response.data;
+}
+export async function submitInternalStockRequest(id: string) {
+  const response = await api.post(`/internal-stock-requests/${encode(id)}/submit`);
+  return response.data;
+}
+export async function approveInternalStockRequest(id: string, lines: ApiPayload[]) {
+  const response = await api.post(`/internal-stock-requests/${encode(id)}/approve`, { lines });
+  return response.data;
+}
+export async function getStockTransfer(id: string) {
+  const response = await api.get(`/stock-transfers/${encode(id)}`);
+  return response.data;
+}
 export async function getInventoryValuation() {
   const response = await api.get("/inventory-reports/valuation");
   return response.data;

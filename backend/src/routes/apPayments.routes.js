@@ -2,9 +2,24 @@ import express from "express";
 import { pool, query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, getUserRoles } from "../middleware/permissions.js";
+import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
 import { refreshPurchaseOrderStatusesByApPaymentId } from "../utils/purchaseOrderStatus.js";
 
 const router = express.Router();
+router.use(requireAuth,requireLocationAccessWhenSpecified);
+const allBranches=(req)=>getUserRoles(req).includes("HEAD_OFFICE");
+const allLocations=(req)=>getUserRoles(req).some((role)=>["ADMIN","MANAGER","AUDITOR","HEAD_OFFICE"].includes(role));
+router.param("paymentId",async(req,res,next,value)=>{try{const r=await query(`SELECT branch_id FROM pur.ap_payment WHERE ap_payment_id=$1`,[value]);if(!r.rowCount)return res.status(404).json({success:false,message:"Supplier payment not found."});if(!allBranches(req)&&r.rows[0].branch_id!==req.branchId)return res.status(403).json({success:false,message:"You are not authorized for this payment branch."});next();}catch(error){next(error);}});
+
+async function assertApApplicationScope(client,req,applications){
+  for(const app of applications||[]){
+    const r=await client.query(`SELECT l.location_id,l.branch_id FROM pur.ap_invoice api LEFT JOIN pur.goods_receipt gr ON gr.grn_id=api.grn_id LEFT JOIN app.location l ON l.location_id=gr.location_id WHERE api.ap_invoice_id=$1`,[app.ap_invoice_id]);
+    if(!r.rowCount)continue;
+    const row=r.rows[0];
+    if(!allBranches(req)&&row.branch_id!==req.branchId)throw Object.assign(new Error("Payment applications must belong to the active branch."),{status:403});
+    if(!allLocations(req)&&!(await client.query(`SELECT 1 FROM sec.user_location WHERE user_id=$1 AND location_id=$2 AND is_active`,[req.user?.user_id,row.location_id])).rowCount)throw Object.assign(new Error("You are not authorized for an applied invoice location."),{status:403});
+  }
+}
 
 async function validateApPaymentApplications(client, supplierId, applications, excludePaymentId = null) {
   const validatedApplications = [];
@@ -188,6 +203,7 @@ router.get("/", async (req, res) => {
         ON s.party_id = p.supplier_id
       LEFT JOIN pur.ap_payment_apply pa
         ON pa.ap_payment_id = p.ap_payment_id
+      WHERE (p.branch_id=$1 OR $2::boolean)
       GROUP BY
         p.ap_payment_id,
         p.payment_no,
@@ -210,7 +226,7 @@ router.get("/", async (req, res) => {
         p.backdate_approved_by,
         p.backdate_approved_at
       ORDER BY p.created_at DESC, p.payment_no DESC;
-    `);
+    `,[req.branchId,allBranches(req)]);
 
     res.json({
       success: true,
@@ -272,6 +288,7 @@ router.get("/reports/summary", async (req, res) => {
         ON pa.ap_payment_id = p.ap_payment_id
       LEFT JOIN pur.ap_invoice ai
         ON ai.ap_invoice_id = pa.ap_invoice_id
+      WHERE (p.branch_id=$1 OR $2::boolean)
       GROUP BY
         p.ap_payment_id,
         p.payment_no,
@@ -294,7 +311,7 @@ router.get("/reports/summary", async (req, res) => {
         p.backdate_approved_by,
         p.backdate_approved_at
       ORDER BY p.created_at DESC, p.payment_no DESC;
-    `);
+    `,[req.branchId,allBranches(req)]);
 
     res.json({
       success: true,
@@ -349,9 +366,9 @@ router.get("/:paymentId", async (req, res) => {
       FROM pur.ap_payment p
       LEFT JOIN app.party s
         ON s.party_id = p.supplier_id
-      WHERE p.ap_payment_id = $1;
+      WHERE p.ap_payment_id = $1 AND (p.branch_id=$2 OR $3::boolean);
       `,
-      [paymentId]
+      [paymentId,req.branchId,allBranches(req)]
     );
 
     if (headerResult.rowCount === 0) {
@@ -635,6 +652,8 @@ router.post(
 
       await client.query("BEGIN");
 
+      await assertApApplicationScope(client,req,applications);
+
       const validatedApplications = await validateApPaymentApplications(
         client,
         supplier_id,
@@ -645,6 +664,7 @@ router.post(
         `
         INSERT INTO pur.ap_payment (
           ap_payment_id,
+          branch_id,
           payment_no,
           supplier_id,
           payment_date,
@@ -660,21 +680,23 @@ router.post(
         )
         VALUES (
           gen_random_uuid(),
-          'APP-' || to_char(now(), 'YYYYMMDD-HH24MISS'),
           $1,
+          'APP-' || to_char(now(), 'YYYYMMDD-HH24MISS'),
           $2,
           $3,
           $4,
           $5,
-          now(),
           $6,
+          now(),
           $7,
           $8,
           $9,
-          $10
+          $10,
+          $11
         )
         RETURNING
           ap_payment_id,
+          branch_id,
           payment_no,
           supplier_id,
           payment_date,
@@ -690,6 +712,7 @@ router.post(
           backdate_approved_at;
         `,
         [
+          req.branchId,
           supplier_id,
           payment_date,
           Number(amount),
@@ -873,6 +896,7 @@ router.patch(
         throw error;
       }
 
+      await assertApApplicationScope(client,req,applications);
       const validatedApplications = await validateApPaymentApplications(
         client,
         supplier_id,

@@ -2,10 +2,17 @@ import express from "express";
 import { pool, query } from "../db.js";
 import { postGoodsReceiptController } from "../controllers/goodsReceipts.controller.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission } from "../middleware/permissions.js";
+import { getUserRoles, requirePermission } from "../middleware/permissions.js";
 import { refreshPurchaseOrderStatusByGrnId } from "../utils/purchaseOrderStatus.js";
+import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
 
 const router = express.Router();
+router.use(requireAuth, requireLocationAccessWhenSpecified);
+const allLocations=(req)=>getUserRoles(req).some((role)=>["ADMIN","MANAGER","AUDITOR","HEAD_OFFICE"].includes(role));
+const allBranches=(req)=>getUserRoles(req).includes("HEAD_OFFICE");
+async function guardGrn(req,res,next,value,column){try{const where=column==="grn_id"?"(gr.grn_id::text=$1 OR gr.grn_no=$1)":`gr.${column}=$1`;const r=await query(`SELECT gr.location_id,l.branch_id FROM pur.goods_receipt gr JOIN app.location l ON l.location_id=gr.location_id WHERE ${where}`,[value]);if(!r.rowCount)return res.status(404).json({success:false,message:"Goods receipt not found."});if(!allBranches(req)&&r.rows[0].branch_id!==req.branchId)return res.status(403).json({success:false,message:"You are not authorized for this GRN branch."});if(!allLocations(req)&&!(await query(`SELECT 1 FROM sec.user_location WHERE user_id=$1 AND location_id=$2 AND is_active`,[req.user?.user_id,r.rows[0].location_id])).rowCount)return res.status(403).json({success:false,message:"You are not authorized for this GRN location."});next();}catch(error){next(error);}}
+router.param("grnId",(req,res,next,value)=>guardGrn(req,res,next,value,"grn_id"));
+router.param("grnNo",(req,res,next,value)=>guardGrn(req,res,next,value,"grn_no"));
 
 router.post(
   "/:grnNo/post",
@@ -49,6 +56,8 @@ router.get("/", async (req, res) => {
         ON u.user_id = gr.created_by
       LEFT JOIN pur.goods_receipt_line grl
         ON grl.grn_id = gr.grn_id
+      WHERE (loc.branch_id=$1 OR $2::boolean)
+        AND ($3::boolean OR EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$4 AND ul.location_id=gr.location_id AND ul.is_active))
       GROUP BY
         gr.grn_id,
         gr.grn_no,
@@ -65,7 +74,7 @@ router.get("/", async (req, res) => {
         u.full_name,
         gr.created_at
       ORDER BY gr.created_at DESC, gr.grn_no DESC;
-    `);
+    `,[req.branchId,allBranches(req),allLocations(req),req.user?.user_id]);
 
     res.json({
       success: true,
@@ -87,6 +96,7 @@ router.get("/", async (req, res) => {
  */
 router.get("/reports/variance", async (req, res) => {
   try {
+    if(!allBranches(req))return res.status(403).json({success:false,message:"The GRN variance view is not yet branch-scoped."});
     const result = await query(`
       SELECT
         grn_no,
@@ -173,6 +183,9 @@ router.get("/reports/summary", async (req, res) => {
       LEFT JOIN pur.goods_receipt_line grl
         ON grl.grn_id = gr.grn_id
 
+      WHERE (loc.branch_id=$1 OR $2::boolean)
+        AND ($3::boolean OR EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$4 AND ul.location_id=gr.location_id AND ul.is_active))
+
       GROUP BY
         gr.grn_id,
         gr.grn_no,
@@ -191,7 +204,7 @@ router.get("/reports/summary", async (req, res) => {
         gr.created_at
 
       ORDER BY gr.created_at DESC;
-    `);
+    `,[req.branchId,allBranches(req),allLocations(req),req.user?.user_id]);
 
     res.json({
       success: true,
@@ -244,10 +257,10 @@ router.get("/:grnId", async (req, res) => {
         ON loc.location_id = gr.location_id
       LEFT JOIN sec.app_user u
         ON u.user_id = gr.created_by
-      WHERE gr.grn_id::text = $1
-         OR gr.grn_no = $1;
+      WHERE (gr.grn_id::text = $1 OR gr.grn_no = $1)
+        AND (loc.branch_id=$2 OR $3::boolean);
       `,
-      [grnId]
+      [grnId,req.branchId,allBranches(req)]
     );
 
     if (headerResult.rowCount === 0) {

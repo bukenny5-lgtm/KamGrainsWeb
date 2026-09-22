@@ -1,4 +1,4 @@
-﻿# KAM GRAINS ERP Platform Roadmap
+# KAM GRAINS ERP Platform Roadmap
 
 ## Platform Baseline
 
@@ -122,3 +122,20 @@ Production deployment must not proceed without a known rollback path.
 ### Phase 19D — Frontend Recovery and Final Acceptance (2026-09-20)
 
 The blank authenticated shell was corrected by hardening the role guard. Dashboard, Setup, and Customer Returns now render in the existing session. Full financial UI acceptance remains blocked until the browser session and current backend share one origin.
+# Phase 24 — Multi-Location Foundation (2026-09-22)
+
+One business continues to own one product and finance model and may have multiple typed locations. The additive migration reuses `app.location`, retains existing IDs/history, assigns existing FG_STORE as the default when present, marks RETURN_QUARANTINE system-managed and non-saleable, and adds an adjustable 50-active non-system location soft limit. User scope is stored in `sec.user_location`; permissions remain role based. Internal transfers and two-step transit are not implemented yet. Future EFRIS place-of-business mappings and pharmacy locations remain extension points; credentials, tax, and medicine-specific data are deferred.
+
+### Phase 5 continuation — Branch foundation (2026-09-22)
+
+Added `app.branch`, `sec.user_branch`, location-to-branch ownership, KAM backfill, branch context APIs/frontend, and source-branch transit transfer foundation in `phase_25_multi_branch_operations.sql`. Applied to documented development database only. Model remains one company → branches → locations; masters and ledger remain shared. Phase 5 completion is pending all operational, security, regression, and consolidated reporting runtime items in `docs/TEST_LOG.md`.
+
+
+## Phase 5 — Multi-Branch Runtime Acceptance (2026-09-22)
+
+Phase 24/25 foundations are implemented in development and legacy branch-sensitive routes received fail-closed scope hardening. The access admin panel is in the working tree. A rollback-only SQL fixture validated assigned branch/location counts and isolated stock rows. Operational API/browser workflows, attack cases, report/P&L correctness, audit trails, document-number uniqueness, and Phase 4/single-branch regressions remain pending. Dashboard and report endpoints whose SQL lacks proven branch dimensions remain limited to explicitly authorized HEAD_OFFICE users. **Phase 5 remains IN PROGRESS; no production approval.**
+
+
+### Phase 5 Extension — Stock Visibility, Replenishment and Procurement (2026-09-22)
+
+Added separate cross-branch stock visibility, Internal Stock Requests with partial approvals and multiple transfers, explicit transfer receipt variance, and branch procurement modes with PO approval. Authenticated development API acceptance passed for visibility/write isolation, partial fulfillment, duplicate-post protection, procurement gating, audit actors and accounting invariance. Browser acceptance and reverse Head Office request direction remain pending. No production changes, deployment, or commit.

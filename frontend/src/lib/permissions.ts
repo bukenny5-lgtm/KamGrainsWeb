@@ -6,7 +6,9 @@ export type RoleCode =
   | "SALES"
   | "FINANCE"
   | "AUDITOR"
-  | "VIEWER";
+  | "VIEWER"
+  | "STOCK_VISIBILITY"
+  | "HEAD_OFFICE";
 
 export const ROLE_GROUPS = {
   ALL_USERS: [
@@ -18,6 +20,8 @@ export const ROLE_GROUPS = {
     "FINANCE",
     "AUDITOR",
     "VIEWER",
+    "STOCK_VISIBILITY",
+    "HEAD_OFFICE",
   ],
 
   ADMIN_ONLY: ["ADMIN"],
@@ -35,6 +39,7 @@ export const ROLE_GROUPS = {
     "FINANCE",
     "AUDITOR",
     "VIEWER",
+    "STOCK_VISIBILITY",
   ],
 
   PURCHASING_ACCESS: ["ADMIN", "MANAGER", "PURCHASING"],

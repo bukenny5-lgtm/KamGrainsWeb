@@ -4,8 +4,14 @@ import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, getUserRoles, ACTION_ROLES } from "../middleware/permissions.js";
 import { getActiveCompanyId, resolveBusinessFeatureMap } from "../services/businessFeatures.service.js";
 import { setDatabaseUserContext } from "../utils/uuid.js";
+import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
 
 const router = express.Router();
+router.use(requireAuth,requireLocationAccessWhenSpecified);
+const allLocations=(req)=>getUserRoles(req).some((role)=>["ADMIN","MANAGER","AUDITOR","HEAD_OFFICE"].includes(role));
+async function guardSale(req,res,next,value,column){try{const r=await query(`SELECT s.location_id,l.branch_id FROM sal.pos_sale s JOIN app.location l ON l.location_id=s.location_id WHERE s.${column}=$1`,[value]);if(!r.rowCount)return res.status(404).json({success:false,message:"POS sale not found."});if(r.rows[0].branch_id!==req.branchId)return res.status(403).json({success:false,message:"You are not authorized for this sale branch."});if(!allLocations(req)&&!(await query(`SELECT 1 FROM sec.user_location WHERE user_id=$1 AND location_id=$2 AND is_active`,[req.user?.user_id,r.rows[0].location_id])).rowCount)return res.status(403).json({success:false,message:"You are not authorized for this sale location."});next();}catch(error){next(error);}}
+router.param("saleId",(req,res,next,value)=>guardSale(req,res,next,value,"pos_sale_id"));
+router.param("saleNo",(req,res,next,value)=>guardSale(req,res,next,value,"sale_no"));
 
 async function requirePosFeature(req, res, next) {
   try {
@@ -48,12 +54,21 @@ async function getPricingMode() {
   return result.rows[0]?.pos_pricing_mode || "FIXED";
 }
 
-async function resolveLocationId(locationId) {
-  const result = await query(
-    `SELECT location_id FROM app.location WHERE is_active = true AND ($1::uuid IS NULL OR location_id = $1::uuid) ORDER BY location_name LIMIT 1;`,
-    [locationId || null]
-  );
-  return result.rows[0]?.location_id || null;
+async function resolveLocationId(locationId, req) {
+  const roles = getUserRoles(req);
+  const all = roles.some((role) => ["ADMIN", "MANAGER", "AUDITOR"].includes(role));
+  const result = await query(`
+    SELECT l.location_id
+    FROM app.location l
+    WHERE l.is_active AND l.is_saleable AND l.branch_id=$4
+      AND ($1::uuid IS NULL OR l.location_id=$1::uuid)
+      AND ($3::boolean OR EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$2 AND ul.location_id=l.location_id AND ul.is_active))
+    ORDER BY CASE WHEN EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$2 AND ul.location_id=l.location_id AND ul.is_default AND ul.is_active) THEN 0 ELSE 1 END,
+      CASE WHEN l.location_id=(SELECT default_location_id FROM app.branch WHERE branch_id=$4 AND is_active) THEN 0 ELSE 1 END,
+      CASE WHEN l.location_id=(SELECT default_location_id FROM app.company_profile WHERE is_active=true ORDER BY created_at,company_id LIMIT 1) THEN 0 ELSE 1 END,
+      l.location_name
+    LIMIT 1;`, [locationId || null, req.user?.user_id, all, req.branchId]);
+  return { locationId: result.rows[0]?.location_id || null, forbidden: Boolean(locationId && !result.rowCount) };
 }
 
 async function loadSaleById(saleId) {
@@ -181,8 +196,10 @@ router.get(
   async (req, res) => {
     try {
       const search = String(req.query.q || "").trim();
-      const locationId = await resolveLocationId(req.query.location_id || null);
-      if (!locationId) return res.status(409).json({ success: false, message: "An active POS location is required." });
+      const resolved = await resolveLocationId(req.query.location_id || req.headers["x-location-id"] || null, req);
+      const locationId = resolved.locationId;
+      if (resolved.forbidden) return res.status(403).json({ success: false, message: "You are not allowed to operate at this saleable location." });
+      if (!locationId) return res.status(409).json({ success: false, message: "Select an active saleable location before using POS." });
 
       const result = await query(`
         WITH stock AS (
@@ -195,6 +212,7 @@ router.get(
             END) AS qty_on_hand
           FROM inv.stock_movement_line sml
           JOIN inv.stock_movement sm ON sm.movement_id = sml.movement_id
+          WHERE sml.from_location_id=$1 OR sml.to_location_id=$1
           GROUP BY sml.product_id
         )
     SELECT
@@ -368,7 +386,12 @@ router.post(
         return res.status(200).json({ success: true, duplicate: true, message: "POS request already processed.", sale });
       }
 
-      const locationId = await resolveLocationId(body.location_id || null);
+      const resolved = await resolveLocationId(body.location_id || req.headers["x-location-id"] || null, req);
+      const locationId = resolved.locationId;
+      if (resolved.forbidden) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ success: false, message: "You are not allowed to operate at this saleable location." });
+      }
       if (!locationId) {
         await client.query("ROLLBACK");
         return res.status(409).json({ success: false, message: "An active POS location is required." });

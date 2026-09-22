@@ -1,4 +1,4 @@
-﻿# Current Status
+# Current Status
 
 - **Project:** KAM GRAINS ERP â†’ Multi-Business ERP/POS Platform
 - **Current Phase:** Phase 1 — Universal Business Configuration / Universal Branding
@@ -158,3 +158,67 @@ Delivery return source eligibility now follows the existing Delivery posting mod
 Phase 23 corrected the fully paid Delivery return journal imbalance in development. `RET-20260921-000026` now posts with one UGX 2,200 REFUND_PAYABLE credit, AR remains PAID, refund remains DUE, and the RESTOCK movement/journal are balanced. **NOT PRODUCTION READY — MANUAL DELIVERY RETURN RETEST REQUIRED.**
 
 The Customer Return Details and Authorized Refund UI is implemented in the working tree. View and double-click open the same details dialog; refund processing is permission-gated and uses the existing backend settlement workflow. **NOT PRODUCTION READY — MANUAL REFUND RETEST REQUIRED.**
+
+## Phase 25 — Multi-Branch Operations Foundation — 2026-09-22
+
+Phase 24 is retained. Phase 25 added one KAM default branch in development, preserved and assigned existing location IDs, created branch/user mapping, shared branch/location context, branch selector shell, branch APIs, selected order/finance branch dimensions, and a source-branch transit transfer foundation. Development migration applied to `kam_grains_db`; production untouched. Sales Orders and Purchase Orders have branch-filtered reads and branch-aware creation. Broader legacy route/report coverage and branch administration UI are incomplete. POS A/B, Delivery, AR/Receipt, GRN/AP, returns/refunds, inventory controls, transfer conservation, finance, consolidated reporting, authorization matrix, browser testing, and single-branch/Phase 4 regressions remain unvalidated. **PHASE 5 NOT COMPLETE — NOT READY FOR USER APPROVAL. NO DEPLOYMENT; NO COMMIT.**
+# Phase 5 — Multi-Location Foundation (2026-09-22)
+
+- **Implementation:** Initial foundation in the working tree; additive migration, location attributes, default and user-location mapping, scoped POS/inventory validation, and Setup type/saleable fields are present.
+- **Soft limit:** 50 active non-system locations per company by default; profile value can be overridden for future subscription editions.
+- **Compatibility:** FG_STORE and RETURN_QUARANTINE IDs/history are preserved; RETURN_QUARANTINE is flagged system-managed and non-saleable.
+- **Existing location inspection:** Read-only inspection found seven locations (CLEANING_AREA, DISPATCH, FG_STORE, MAIN_STORE, RAW_STORE, RETURN_QUARANTINE, WASTE_AREA), only the five legacy columns, no `company_id`, and no `sec.user_location`. POS previously resolved the first active location when omitted; the migration chooses FG_STORE as the business default when present.
+- **Database safety:** The configured target reports database `kam_grains_db` on localhost but is not identified as development. No migration or test data was applied.
+- **Static validation:** Frontend TypeScript/build, backend build, and `git diff --check` PASS (2026-09-22).
+- **Development runtime:** Migration, rollback-only soft-limit/quarantine checks, and authenticated Locations API smoke passed. Full POS/operational matrix and browser UI remain pending.
+- **Pending:** Shared current-location context, report/dashboard filters, transfer workflow, user assignment screen, and read-list scope review. Production untouched; no deployment or commit.
+
+## Dashboard branch-scoping acceptance fix — 2026-09-22
+
+`GET /api/dashboard/summary` now uses the validated active branch and branch-scoped source queries; HEAD_OFFICE remains subject to `VIEW_ONLY` and receives the selected branch only. Dashboard follows shared operating context and refetches on branch changes. No new migration was required. Static checks and authenticated API/browser acceptance status are tracked in `docs/TEST_LOG.md`; manual Dashboard retest is still required. Production untouched; no deployment or commit.
+
+### Location query acceptance defect — 2026-09-22
+
+The joined locations SELECT now qualifies every location field, removing the reported PostgreSQL ambiguity; existing branch/location authorization is preserved. Read-only execution of the fixed SQL returned seven rows for the supplied account/branch scope. The UI auto-selects only an authorized available location and displays a controlled Setup-directed message when none is available. Authenticated HTTP and Dashboard browser retests remain outstanding; see `docs/TEST_LOG.md`.
+
+
+## Phase 5 Acceptance — Runtime, Security and Regression (2026-09-22)
+
+**Status: IN PROGRESS — NOT ACCEPTED.** The rollback-contained database fixture check proves temporary A/B scope membership and branch-owned stock rows only. Static code review/builds pass. Authenticated API and browser workflow matrix is pending. Any remaining unscoped legacy/consolidated reports and GRN variance retain their existing role gates while branch-safe scopes are unavailable. See `docs/TEST_LOG.md` for test-by-test status and a manual browser checklist.
+
+Additional hardening adds server-side branch/location guards to legacy inventory, counts, adjustments, cleaning, deliveries, GRNs, AR/AP, finance, POS, and customer-return routes. AR and AP payment applications verify source invoice branch/location. The shared context middleware also rejects inactive requested/default branches. HEAD_OFFICE remains subject to endpoint permission checks. Expense vouchers and payment headers persist branch IDs. The Setup branch access panel reuses branch/location administration APIs. These changes have not been exercised through authenticated UI/API workflows.
+
+### Phase 5 reporting/finance + POS A/B acceptance — 2026-09-22
+
+**Status: IN PROGRESS — NOT ACCEPTED.** Added selected-branch query scopes for the approved Finance reports and seven weekly reporting endpoints, exposed source branch on the unified sales-event view, and attributed POS posting/reversal journals to the POS location branch. POS location resolution and product stock are scoped to the selected branch/location, and sale lookup rejects cross-branch access. Direct development-database SQL checks pass for the listed Finance and weekly-report queries, but there is only one active branch and no authenticated browser/API session for genuine Branch A/B POS acceptance. Customer-concentration and other non-whitelisted consolidated reports remain HEAD_OFFICE-gated. P&L classification remains constrained by the shared chart of accounts; see `docs/TEST_LOG.md` and `docs/DECISIONS.md`. No production deployment or commit was made.
+# Phase 5 authenticated A/B acceptance — 2026-09-22
+
+**IN PROGRESS — NOT ACCEPTED.** A second development-only branch and real authenticated A/B API sessions were created and exercised. Dashboard, Finance, seven weekly reports, POS, returns/refunds, transfer, stock count/adjustment and A sales/AP purchasing workflows have substantial API coverage. Browser verification, cleaning, Head Office/consolidated access, complete post-transaction consolidated finance reconciliation, cross-branch AP document retrieval checks, Credit POS, Return Policy, and frontend build completion remain pending. See `docs/TEST_LOG.md`. Phase 31 fixes PUR journal branch attribution on the configured development database. Test branch B should be retained temporarily for final approval. Production remains untouched; no deployment or commit.
+## Phase 5 Extension — 2026-09-22
+
+- Implementation: cross-branch stock visibility, Internal Stock Requests, partial/multiple transfers, explicit variance, transfer screens, branch procurement policy and PO approval are implemented.
+- Authenticated development API acceptance passed for visibility versus transaction authorization, partial approval/fulfillment, transfer state/actors, duplicate-post protection, procurement modes, audit, valuation invariance and no GL journals.
+- Static validation: backend syntax/build and frontend TypeScript/build passed.
+- Pending: authenticated browser acceptance, reverse Head Office request direction, and explicit inventory category filter. A partial-delivery variance remains explicitly in transit in development.
+- No production access/deployment or commit. Runtime approval required.
+## Phase 5 Final Closure — 2026-09-22
+
+The Inventory page now includes a Category selector sourced from the existing product-category model and combined with branch, location and search filters. Backend/static validation passes. Codex browser inspection found no tabs or authenticated session, so browser workflows remain pending. Reverse Head Office request and explicit transit-remainder UX acceptance also remain pending. Production untouched; no deployment or commit.
+## Phase 5 Final Acceptance Update — 2026-09-22
+
+Transfer variance closure was tightened: unresolved RECEIVED_WITH_VARIANCE transfers can receive only their remaining transit quantity, and the Transfer Detail UI makes dispatched, received, remaining in transit, variance, reason, status, actors and timestamps explicit. Reverse Head Office API acceptance could not be completed because the temporary development API process was unavailable; browser acceptance remains pending because no authenticated browser session exists. No production access, deployment or commit.
+## Phase 5 Frontend Completion — 2026-09-22
+
+Stock Request and Inter-Site Transfer pages are routed, sidebar-visible and permission-gated. Transfer detail now exposes remaining transit and supports controlled later receipt for RECEIVED_WITH_VARIANCE. Static validation passes. Reverse HQ runtime acceptance and all browser workflows remain pending because no authenticated browser session was available and the temporary API process was unavailable during the final scripted attempt. Production untouched; no deployment or commit.
+## Authentication Timeout Fix — 2026-09-22
+
+The reported login timeout was caused by frontend/.env.local targeting localhost:3001 while the backend is configured for localhost:3000. The frontend base URL now matches the backend. Direct HTTP login returned 200 in approximately 4.8 seconds; browser retest remains pending because no authenticated browser session was available. Production untouched; no deployment or commit.
+## Phase 5 Source-Lot Selection Fix — 2026-09-22
+
+The Internal Stock Request transfer form no longer mixes the current KAM operating location with a selected TEST_B source branch. Source locations are branch-scoped and stale selections clear on branch changes. Multi-lot source allocation is supported in the UI; backend revalidation remains authoritative. Development NB-CLEAN stock is currently in KAM Clean Beans Store, not TEST_B, so the exact TEST_B transfer remains pending. Production untouched; no deployment or commit.
+## Phase 5 Transfer Detail UI Correction — 2026-09-23
+
+Transfer detail presentation now normalizes quantity precision, formats costs, separates table columns, labels receive inputs explicitly, and displays readable actors/statuses/reasons/timestamps. Static validation passes. Manual transfer display retest remains pending; no production changes, deployment, or commit.
+## Phase 5 Request Direction UI Fix — 2026-09-23
+
+Internal Stock Requests now make direction explicit in creation, history and detail views. Branch/location authorization remains backend-enforced. Static validation passes; manual reverse-HQ and opposite-direction request retests remain pending. Production untouched; no deployment or commit.

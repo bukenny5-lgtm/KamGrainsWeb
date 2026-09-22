@@ -1,10 +1,17 @@
 import express from "express";
 import { pool, query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission } from "../middleware/permissions.js";
+import { getUserRoles, requirePermission } from "../middleware/permissions.js";
+import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
 import { refreshPurchaseOrderStatusByGrnId } from "../utils/purchaseOrderStatus.js";
 
 const router = express.Router();
+router.use(requireAuth,requireLocationAccessWhenSpecified);
+const allBranches=(req)=>getUserRoles(req).includes("HEAD_OFFICE");
+const allLocations=(req)=>getUserRoles(req).some((role)=>["ADMIN","MANAGER","AUDITOR","HEAD_OFFICE"].includes(role));
+async function guardApInvoice(req,res,next,value,column){try{const r=await query(`SELECT gr.location_id,l.branch_id FROM pur.ap_invoice api LEFT JOIN pur.goods_receipt gr ON gr.grn_id=api.grn_id LEFT JOIN app.location l ON l.location_id=gr.location_id WHERE api.${column}=$1`,[value]);if(!r.rowCount)return res.status(404).json({success:false,message:"AP invoice not found."});if(!allBranches(req)&&r.rows[0].branch_id!==req.branchId)return res.status(403).json({success:false,message:"You are not authorized for this supplier invoice branch."});if(!r.rows[0].branch_id&&!allBranches(req))return res.status(403).json({success:false,message:"This invoice has no branch source and is restricted to Head Office."});if(!allLocations(req)&&!(await query(`SELECT 1 FROM sec.user_location WHERE user_id=$1 AND location_id=$2 AND is_active`,[req.user?.user_id,r.rows[0].location_id])).rowCount)return res.status(403).json({success:false,message:"You are not authorized for this supplier invoice location."});next();}catch(error){next(error);}}
+router.param("invoiceId",(req,res,next,value)=>guardApInvoice(req,res,next,value,"ap_invoice_id"));
+router.param("invoiceNo",(req,res,next,value)=>guardApInvoice(req,res,next,value,"invoice_no"));
 function getApInvoiceErrorStatus(error, fallbackStatus = 500) {
   const code = String(error?.code || "");
 
@@ -100,12 +107,15 @@ router.get("/", async (req, res) => {
         ON s.party_id = api.supplier_id
       LEFT JOIN pur.goods_receipt gr
         ON gr.grn_id = api.grn_id
+      LEFT JOIN app.location l ON l.location_id=gr.location_id
       LEFT JOIN invoice_totals it
         ON it.ap_invoice_id = api.ap_invoice_id
       LEFT JOIN paid_totals pt
         ON pt.ap_invoice_id = api.ap_invoice_id
+      WHERE (l.branch_id=$1 OR $2::boolean)
+        AND ($3::boolean OR EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$4 AND ul.location_id=gr.location_id AND ul.is_active))
       ORDER BY api.created_at DESC, api.invoice_no DESC;
-    `);
+    `,[req.branchId,allBranches(req),allLocations(req),req.user?.user_id]);
 
     res.json({
       success: true,
@@ -184,12 +194,15 @@ router.get("/reports/summary", async (req, res) => {
         ON s.party_id = api.supplier_id
       LEFT JOIN pur.goods_receipt gr
         ON gr.grn_id = api.grn_id
+      LEFT JOIN app.location l ON l.location_id=gr.location_id
       LEFT JOIN invoice_totals it
         ON it.ap_invoice_id = api.ap_invoice_id
       LEFT JOIN paid_totals pt
         ON pt.ap_invoice_id = api.ap_invoice_id
+      WHERE (l.branch_id=$1 OR $2::boolean)
+        AND ($3::boolean OR EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$4 AND ul.location_id=gr.location_id AND ul.is_active))
       ORDER BY api.created_at DESC, api.invoice_no DESC;
-    `);
+    `,[req.branchId,allBranches(req),allLocations(req),req.user?.user_id]);
 
     res.json({
       success: true,
@@ -265,13 +278,14 @@ router.get("/:invoiceId", async (req, res) => {
         ON s.party_id = api.supplier_id
       LEFT JOIN pur.goods_receipt gr
         ON gr.grn_id = api.grn_id
+      LEFT JOIN app.location l ON l.location_id=gr.location_id
       LEFT JOIN invoice_total it
         ON it.ap_invoice_id = api.ap_invoice_id
       LEFT JOIN paid_total pt
         ON pt.ap_invoice_id = api.ap_invoice_id
-      WHERE api.ap_invoice_id = $1;
+      WHERE api.ap_invoice_id = $1 AND (l.branch_id=$2 OR $3::boolean);
       `,
-      [invoiceId]
+      [invoiceId,req.branchId,allBranches(req)]
     );
 
     if (headerResult.rowCount === 0) {
@@ -342,15 +356,18 @@ router.post(
       const grnResult = await client.query(
         `
         SELECT
-          grn_id,
-          grn_no,
-          po_id,
-          supplier_id,
-          receipt_date,
-          status,
-          is_posted
-        FROM pur.goods_receipt
-        WHERE grn_no = $1;
+          gr.grn_id,
+          gr.grn_no,
+          gr.po_id,
+          gr.supplier_id,
+          gr.location_id,
+          l.branch_id,
+          gr.receipt_date,
+          gr.status,
+          gr.is_posted
+        FROM pur.goods_receipt gr
+        JOIN app.location l ON l.location_id=gr.location_id
+        WHERE gr.grn_no = $1;
         `,
         [grn_no]
       );
@@ -365,6 +382,8 @@ router.post(
       }
 
       const grn = grnResult.rows[0];
+      if(!allBranches(req)&&grn.branch_id!==req.branchId)throw Object.assign(new Error("You are not authorized for this GRN branch."),{status:403});
+      if(!allLocations(req)&&!(await client.query(`SELECT 1 FROM sec.user_location WHERE user_id=$1 AND location_id=$2 AND is_active`,[req.user?.user_id,grn.location_id])).rowCount)throw Object.assign(new Error("You are not authorized for this GRN location."),{status:403});
 
       if (grn.is_posted !== true) {
         await client.query("ROLLBACK");

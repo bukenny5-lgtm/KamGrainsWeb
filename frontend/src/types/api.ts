@@ -119,7 +119,8 @@ export type BusinessFeatureCode =
   | "finance"
   | "reports"
   | "pos"
-  | "barcode";
+  | "barcode"
+  | "MULTI_LOCATION";
 
 export type BusinessFeatureDefinition = {
   feature_code: BusinessFeatureCode;

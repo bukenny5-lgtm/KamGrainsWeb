@@ -9,6 +9,7 @@ export const KAM_FEATURE_FALLBACK = {
   reports: true,
   pos: false,
   barcode: false,
+  MULTI_LOCATION: false,
 };
 
 export async function getActiveCompanyId() {

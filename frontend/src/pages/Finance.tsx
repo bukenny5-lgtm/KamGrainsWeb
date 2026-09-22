@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useOperatingContext } from "@/lib/operatingContext";
 import {
   BookOpen,
   Eye,
@@ -88,6 +89,8 @@ function getBalancedBadge(difference: unknown) {
 }
 
 export default function Finance() {
+  const operating = useOperatingContext();
+  const branchId = operating.currentBranch?.branch_id || "";
   const [search, setSearch] = useState("");
   const [selectedJournalNo, setSelectedJournalNo] = useState<string | null>(
     null
@@ -96,27 +99,27 @@ export default function Finance() {
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
   const journalsQuery = useQuery({
-    queryKey: ["finance-journals"],
+    queryKey: ["finance-journals", branchId],
     queryFn: getFinanceJournals,
   });
 
   const trialBalanceQuery = useQuery({
-    queryKey: ["finance-trial-balance"],
+    queryKey: ["finance-trial-balance", branchId],
     queryFn: getTrialBalanceReport,
   });
 
   const profitLossQuery = useQuery({
-    queryKey: ["finance-profit-loss"],
+    queryKey: ["finance-profit-loss", branchId],
     queryFn: getProfitAndLossReport,
   });
 
   const balanceSheetQuery = useQuery({
-    queryKey: ["finance-balance-sheet"],
+    queryKey: ["finance-balance-sheet", branchId],
     queryFn: getBalanceSheetReport,
   });
 
   const cashbookQuery = useQuery({
-    queryKey: ["finance-cashbook"],
+    queryKey: ["finance-cashbook", branchId],
     queryFn: getCashbookReport,
   });
 
@@ -308,6 +311,12 @@ export default function Finance() {
               Income: {formatMoney(plSummary.income)}
             </p>
             <p className="text-xs text-slate-500">
+              Gross profit: {formatMoney(plSummary.gross_profit)}
+            </p>
+            <p className="text-xs text-slate-500">
+              Operating profit: {formatMoney(plSummary.operating_profit)}
+            </p>
+            <p className="text-xs text-slate-500">
               Expenses: {formatMoney(plSummary.expenses)}
             </p>
           </CardContent>
@@ -333,6 +342,13 @@ export default function Finance() {
           </CardContent>
         </Card>
       </div>
+
+      {balanceSheetQuery.data?.summary?.allocation_note && (
+        <Alert>
+          <AlertTitle>Branch balance sheet scope</AlertTitle>
+          <AlertDescription>{balanceSheetQuery.data.summary.allocation_note}</AlertDescription>
+        </Alert>
+      )}
 
       <Card className="rounded-2xl shadow-sm">
         <CardHeader className="space-y-4">

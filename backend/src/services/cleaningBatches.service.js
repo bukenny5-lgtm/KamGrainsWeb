@@ -70,7 +70,7 @@ function validateExtraCosts(extraCosts) {
   }
 }
 
-export async function listCleaningBatches() {
+export async function listCleaningBatches(scope) {
   const sql = `
     WITH input_summary AS (
       SELECT
@@ -234,14 +234,17 @@ export async function listCleaningBatches() {
       ON ics.batch_id = b.batch_id
     LEFT JOIN posted_output_cost_summary pocs
       ON pocs.batch_id = b.batch_id
+    WHERE raw_loc.branch_id = $1
+      AND fg_loc.branch_id = $1
+      AND ($2::boolean OR (EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$3 AND ul.location_id=b.raw_location_id AND ul.is_active) AND EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$3 AND ul.location_id=b.fg_location_id AND ul.is_active)))
     ORDER BY b.created_at DESC;
   `;
 
-  const { rows } = await pool.query(sql);
+  const { rows } = await pool.query(sql, [scope.branchId, Boolean(scope.allLocations), scope.userId]);
   return rows;
 }
 
-export async function getCleaningBatchByNo(batchNo) {
+export async function getCleaningBatchByNo(batchNo, scope) {
   requireField(batchNo, "batch_no");
 
   const client = await pool.connect();
@@ -280,10 +283,11 @@ export async function getCleaningBatchByNo(batchNo) {
         ON raw_loc.location_id = b.raw_location_id
       LEFT JOIN app.location fg_loc 
         ON fg_loc.location_id = b.fg_location_id
-      WHERE b.batch_no = $1;
+      WHERE b.batch_no = $1 AND raw_loc.branch_id=$2 AND fg_loc.branch_id=$2
+        AND ($3::boolean OR (EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$4 AND ul.location_id=b.raw_location_id AND ul.is_active) AND EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$4 AND ul.location_id=b.fg_location_id AND ul.is_active)));
     `;
 
-    const headerResult = await client.query(headerSql, [batchNo]);
+    const headerResult = await client.query(headerSql, [batchNo, scope.branchId, Boolean(scope.allLocations), scope.userId]);
 
     if (headerResult.rowCount === 0) {
       const err = new Error("Cleaning batch not found");
@@ -528,7 +532,7 @@ export async function getCleaningBatchByNo(batchNo) {
   }
 }
 
-export async function createCleaningBatch(payload) {
+export async function createCleaningBatch(payload, scope) {
   const {
     batch_no,
     finished_product_id,
@@ -600,6 +604,7 @@ export async function createCleaningBatch(payload) {
 
   try {
     await client.query("BEGIN");
+    await requireCleaningLocations(client, scope, [raw_location_id, fg_location_id]);
 
     const finalBatchNo =
       batch_no ||
@@ -794,7 +799,7 @@ export async function createCleaningBatch(payload) {
 
     await client.query("COMMIT");
 
-    return getCleaningBatchByNo(batch.batch_no);
+    return getCleaningBatchByNo(batch.batch_no, scope);
   } catch (error) {
     await client.query("ROLLBACK");
 
@@ -809,7 +814,7 @@ export async function createCleaningBatch(payload) {
   }
 }
 
-export async function postCleaningBatchByNo(batchNo) {
+export async function postCleaningBatchByNo(batchNo, scope) {
   requireField(batchNo, "batch_no");
 
   const client = await pool.connect();
@@ -819,12 +824,16 @@ export async function postCleaningBatchByNo(batchNo) {
 
     const batchCheck = await client.query(
       `
-        SELECT batch_id, batch_no, status, is_posted
-        FROM mfg.batch
-        WHERE batch_no = $1
+        SELECT b.batch_id,b.batch_no,b.status,b.is_posted,b.raw_location_id,b.fg_location_id
+        FROM mfg.batch b
+        JOIN app.location raw_loc ON raw_loc.location_id=b.raw_location_id
+        JOIN app.location fg_loc ON fg_loc.location_id=b.fg_location_id
+        WHERE b.batch_no=$1 AND raw_loc.branch_id=$2 AND fg_loc.branch_id=$2
+          AND raw_loc.is_active AND fg_loc.is_active
+          AND ($3::boolean OR (EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$4 AND ul.location_id=b.raw_location_id AND ul.is_active) AND EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$4 AND ul.location_id=b.fg_location_id AND ul.is_active)))
         FOR UPDATE;
       `,
-      [batchNo]
+      [batchNo, scope.branchId, Boolean(scope.allLocations), scope.userId]
     );
 
     if (batchCheck.rowCount === 0) {
@@ -850,7 +859,7 @@ export async function postCleaningBatchByNo(batchNo) {
 
     await client.query("COMMIT");
 
-    return getCleaningBatchByNo(batchNo);
+    return getCleaningBatchByNo(batchNo, scope);
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -859,7 +868,7 @@ export async function postCleaningBatchByNo(batchNo) {
   }
 }
 
-export async function deleteCleaningBatchByNo(batchNo) {
+export async function deleteCleaningBatchByNo(batchNo, scope) {
   requireField(batchNo, "batch_no");
 
   const client = await pool.connect();
@@ -869,12 +878,16 @@ export async function deleteCleaningBatchByNo(batchNo) {
 
     const batchResult = await client.query(
       `
-        SELECT batch_id, batch_no, is_posted
-        FROM mfg.batch
-        WHERE batch_no = $1
+        SELECT b.batch_id,b.batch_no,b.is_posted
+        FROM mfg.batch b
+        JOIN app.location raw_loc ON raw_loc.location_id=b.raw_location_id
+        JOIN app.location fg_loc ON fg_loc.location_id=b.fg_location_id
+        WHERE b.batch_no=$1 AND raw_loc.branch_id=$2 AND fg_loc.branch_id=$2
+          AND raw_loc.is_active AND fg_loc.is_active
+          AND ($3::boolean OR (EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$4 AND ul.location_id=b.raw_location_id AND ul.is_active) AND EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$4 AND ul.location_id=b.fg_location_id AND ul.is_active)))
         FOR UPDATE;
       `,
-      [batchNo]
+      [batchNo, scope.branchId, Boolean(scope.allLocations), scope.userId]
     );
 
     if (batchResult.rowCount === 0) {
@@ -921,6 +934,23 @@ export async function deleteCleaningBatchByNo(batchNo) {
   }
 }
 
-export async function getCleaningBatchSummaryReport() {
-  return listCleaningBatches();
+export async function getCleaningBatchSummaryReport(scope) {
+  return listCleaningBatches(scope);
+}
+
+async function requireCleaningLocations(client, scope, locationIds) {
+  if (!scope?.branchId || !scope?.userId) {
+    const err = new Error("Branch context is required for cleaning operations");
+    err.status = 403;
+    throw err;
+  }
+  const result = await client.query(
+    `SELECT l.location_id FROM app.location l WHERE l.location_id=ANY($1::uuid[]) AND l.is_active AND l.branch_id=$2 AND ($3::boolean OR EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$4 AND ul.location_id=l.location_id AND ul.is_active))`,
+    [locationIds, scope.branchId, Boolean(scope.allLocations), scope.userId]
+  );
+  if (result.rowCount !== new Set(locationIds.map(String)).size) {
+    const err = new Error("Cleaning locations must be active and authorized within the selected branch");
+    err.status = 403;
+    throw err;
+  }
 }

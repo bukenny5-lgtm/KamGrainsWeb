@@ -36,6 +36,9 @@ import ApiPaymentChannels from "@/pages/ApiPaymentChannels";
 import Reconciliations from "@/pages/Reconciliations";
 import PosQuickSale from "@/pages/PosQuickSale";
 import CustomerReturns from "@/pages/CustomerReturns";
+import InternalStockRequests from "@/pages/InternalStockRequests";
+import InterSiteTransfers from "@/pages/InterSiteTransfers";
+import { OperatingContextProvider } from "@/lib/operatingContext";
 
 const router = createBrowserRouter([
   {
@@ -73,6 +76,14 @@ const router = createBrowserRouter([
             <InventoryStock />
           </ProtectedRoute>
         ),
+      },
+      {
+        path: "stock-requests",
+        element: <ProtectedRoute feature="inventory" allowedRoles={roleList(["ADMIN","MANAGER","INVENTORY","PURCHASING","HEAD_OFFICE"])}><InternalStockRequests /></ProtectedRoute>,
+      },
+      {
+        path: "stock-transfers",
+        element: <ProtectedRoute feature="inventory" allowedRoles={roleList(["ADMIN","MANAGER","INVENTORY","HEAD_OFFICE"])}><InterSiteTransfers /></ProtectedRoute>,
       },
       {
         path: "stock-movements",
@@ -293,7 +304,9 @@ const router = createBrowserRouter([
 export default function App() {
   return (
     <AuthProvider>
-      <RouterProvider router={router} />
+      <OperatingContextProvider>
+        <RouterProvider router={router} />
+      </OperatingContextProvider>
     </AuthProvider>
   );
 }

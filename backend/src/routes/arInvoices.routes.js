@@ -1,9 +1,29 @@
 import express from "express";
 import { pool, query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission } from "../middleware/permissions.js";
+import { getUserRoles, requirePermission } from "../middleware/permissions.js";
+import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
 
 const router = express.Router();
+router.use(requireAuth,requireLocationAccessWhenSpecified);
+const allLocations=(req)=>getUserRoles(req).some((role)=>["ADMIN","MANAGER","AUDITOR","HEAD_OFFICE"].includes(role));
+const allBranches=(req)=>getUserRoles(req).includes("HEAD_OFFICE");
+async function guardInvoice(req,res,next,key,value){
+  try{
+    const r=await query(`SELECT ai.ar_invoice_id,loc.location_id,loc.branch_id FROM sal.ar_invoice ai LEFT JOIN sal.delivery d ON d.delivery_id=ai.delivery_id LEFT JOIN sal.pos_sale ps ON ps.credit_ar_invoice_id=ai.ar_invoice_id LEFT JOIN app.location loc ON loc.location_id=COALESCE(d.location_id,ps.location_id) WHERE ai.${key}=$1`,[value]);
+    if(!r.rowCount)return res.status(404).json({success:false,message:"AR invoice not found."});
+    const row=r.rows[0];
+    if(!allBranches(req)&&row.branch_id!==req.branchId)return res.status(403).json({success:false,message:"You are not authorized for this invoice branch."});
+    if(!allLocations(req)&&row.location_id&&!(await query(`SELECT 1 FROM sec.user_location WHERE user_id=$1 AND location_id=$2 AND is_active`,[req.user?.user_id,row.location_id])).rowCount)return res.status(403).json({success:false,message:"You are not authorized for this invoice location."});
+    if(!row.branch_id&&!allBranches(req))return res.status(403).json({success:false,message:"This invoice has no branch source and is restricted to Head Office."});
+    next();
+  }catch(error){next(error);}
+}
+router.param("invoiceId",(req,res,next,value)=>guardInvoice(req,res,next,"ar_invoice_id",value));
+router.param("invoiceNo",(req,res,next,value)=>guardInvoice(req,res,next,"invoice_no",value));
+router.param("deliveryNo",async(req,res,next,value)=>{
+  try{const r=await query(`SELECT d.location_id,l.branch_id FROM sal.delivery d JOIN app.location l ON l.location_id=d.location_id WHERE d.delivery_no=$1`,[value]);if(!r.rowCount)return res.status(404).json({success:false,message:"Delivery not found."});if(!allBranches(req)&&r.rows[0].branch_id!==req.branchId)return res.status(403).json({success:false,message:"You are not authorized for this delivery branch."});if(!allLocations(req)&&!(await query(`SELECT 1 FROM sec.user_location WHERE user_id=$1 AND location_id=$2 AND is_active`,[req.user?.user_id,r.rows[0].location_id])).rowCount)return res.status(403).json({success:false,message:"You are not authorized for this delivery location."});next();}catch(error){next(error);}
+});
 function getArInvoiceErrorStatus(error, fallbackStatus = 500) {
   const code = String(error?.code || "");
 
@@ -58,7 +78,7 @@ router.get("/", async (req, res) => {
         ai.delivery_id,
         d.delivery_no,
         so.so_no,
-        ps.sale_no AS pos_sale_no,
+        ps.sale_no,
         ai.invoice_date,
         ai.due_date,
         ai.status,
@@ -86,12 +106,15 @@ router.get("/", async (req, res) => {
         ON so.so_id = d.so_id
       LEFT JOIN sal.pos_sale ps
         ON ps.credit_ar_invoice_id = ai.ar_invoice_id
+      LEFT JOIN app.location src_loc ON src_loc.location_id=COALESCE(d.location_id,ps.location_id)
       LEFT JOIN fin.gl_journal gj_post
         ON gj_post.journal_id = ai.posted_journal_id
       LEFT JOIN fin.gl_journal gj_rev
         ON gj_rev.journal_id = ai.reversal_journal_id
       LEFT JOIN sal.ar_invoice_line ail
         ON ail.ar_invoice_id = ai.ar_invoice_id
+      WHERE (src_loc.branch_id=$1 OR $2::boolean)
+        AND ($3::boolean OR EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$4 AND ul.location_id=src_loc.location_id AND ul.is_active))
       GROUP BY
         ai.ar_invoice_id,
         ai.invoice_no,
@@ -118,7 +141,7 @@ router.get("/", async (req, res) => {
         ai.backdate_approved_by,
         ai.backdate_approved_at
       ORDER BY ai.created_at DESC, ai.invoice_no DESC;
-    `);
+    `,[req.branchId,allBranches(req),allLocations(req),req.user?.user_id]);
 
     res.json({
       success: true,
@@ -185,6 +208,7 @@ router.get("/reports/summary", async (req, res) => {
         ON so.so_id = d.so_id
       LEFT JOIN sal.pos_sale ps
         ON ps.credit_ar_invoice_id = ai.ar_invoice_id
+      LEFT JOIN app.location src_loc ON src_loc.location_id=COALESCE(d.location_id,ps.location_id)
       LEFT JOIN fin.gl_journal gj_post
         ON gj_post.journal_id = ai.posted_journal_id
       LEFT JOIN fin.gl_journal gj_rev
@@ -199,6 +223,9 @@ router.get("/reports/summary", async (req, res) => {
         GROUP BY apa.ar_invoice_id
       ) payments
         ON payments.ar_invoice_id = ai.ar_invoice_id
+
+      WHERE (src_loc.branch_id=$1 OR $2::boolean)
+        AND ($3::boolean OR EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$4 AND ul.location_id=src_loc.location_id AND ul.is_active))
 
       GROUP BY
         ai.ar_invoice_id,
@@ -228,7 +255,7 @@ router.get("/reports/summary", async (req, res) => {
         payments.total_applied
 
       ORDER BY ai.created_at DESC;
-    `);
+    `,[req.branchId,allBranches(req),allLocations(req),req.user?.user_id]);
 
     res.json({
       success: true,
@@ -795,6 +822,10 @@ router.post(
       }
 
       await client.query("BEGIN");
+      const deliveryScope=await client.query(`SELECT d.location_id,l.branch_id FROM sal.delivery d JOIN app.location l ON l.location_id=d.location_id WHERE d.delivery_id=$1`,[delivery_id]);
+      if(!deliveryScope.rowCount)throw Object.assign(new Error("Delivery not found."),{status:404});
+      if(!allBranches(req)&&deliveryScope.rows[0].branch_id!==req.branchId)throw Object.assign(new Error("You are not authorized for this delivery branch."),{status:403});
+      if(!allLocations(req)&&!(await client.query(`SELECT 1 FROM sec.user_location WHERE user_id=$1 AND location_id=$2 AND is_active`,[req.user?.user_id,deliveryScope.rows[0].location_id])).rowCount)throw Object.assign(new Error("You are not authorized for this delivery location."),{status:403});
 
       const deliveryResult = await client.query(
         `

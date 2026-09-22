@@ -2,8 +2,14 @@ import express from "express";
 import { pool, query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission } from "../middleware/permissions.js";
+import { getUserRoles } from "../middleware/permissions.js";
+import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
 
 const router = express.Router();
+router.use(requireAuth, requireLocationAccessWhenSpecified);
+const allLocations=(req)=>getUserRoles(req).some((role)=>["ADMIN","MANAGER","AUDITOR","HEAD_OFFICE"].includes(role));
+const allBranches=(req)=>getUserRoles(req).includes("HEAD_OFFICE");
+router.param("deliveryId",async(req,res,next,value)=>{try{const r=await query(`SELECT d.location_id,l.branch_id FROM sal.delivery d JOIN app.location l ON l.location_id=d.location_id WHERE d.delivery_id=$1`,[value]);if(!r.rowCount)return res.status(404).json({success:false,message:"Delivery not found."});if(!allBranches(req)&&r.rows[0].branch_id!==req.branchId)return res.status(403).json({success:false,message:"You are not authorized for this delivery branch."});if(!allLocations(req)&&!(await query(`SELECT 1 FROM sec.user_location WHERE user_id=$1 AND location_id=$2 AND is_active`,[req.user?.user_id,r.rows[0].location_id])).rowCount)return res.status(403).json({success:false,message:"You are not authorized for this delivery location."});next();}catch(error){next(error);}});
 
 /**
  * GET /api/deliveries
@@ -47,6 +53,8 @@ router.get("/", async (req, res) => {
         ON u.user_id = d.created_by
       LEFT JOIN sal.delivery_line dl
         ON dl.delivery_id = d.delivery_id
+      WHERE (loc.branch_id=$1 OR $2::boolean)
+        AND ($3::boolean OR EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$4 AND ul.location_id=d.location_id AND ul.is_active))
       GROUP BY
         d.delivery_id,
         d.delivery_no,
@@ -70,7 +78,7 @@ router.get("/", async (req, res) => {
         d.backdate_approved_by,
         d.backdate_approved_at
       ORDER BY d.created_at DESC, d.delivery_no DESC;
-    `);
+    `,[req.branchId,allBranches(req),allLocations(req),req.user?.user_id]);
 
     res.json({
       success: true,
@@ -125,6 +133,10 @@ router.get("/lot-options/:deliveryLineId", async (req, res) => {
     }
 
     const line = lineResult.rows[0];
+    if(line.location_id){
+      const allowed=allBranches(req)||((await query(`SELECT 1 FROM app.location l WHERE l.location_id=$1 AND l.branch_id=$2 AND ($3::boolean OR EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$4 AND ul.location_id=l.location_id AND ul.is_active))`,[line.location_id,req.branchId,allLocations(req),req.user?.user_id])).rowCount>0);
+      if(!allowed)return res.status(403).json({success:false,message:"You are not authorized for this delivery location."});
+    }
     const requiredQty = Number(line.required_qty || 0);
 
     const optionsResult = await query(
@@ -236,9 +248,9 @@ router.get("/:deliveryId", async (req, res) => {
         GROUP BY delivery_id
       ) t
         ON t.delivery_id = d.delivery_id
-      WHERE d.delivery_id = $1;
+      WHERE d.delivery_id = $1 AND (loc.branch_id=$2 OR $3::boolean)
       `,
-      [deliveryId]
+      [deliveryId,req.branchId,allBranches(req)]
     );
 
     if (headerResult.rowCount === 0) {

@@ -2,9 +2,10 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Printer, Search, ShoppingCart, Trash2 } from "lucide-react";
 
-import { createPosSale, getLocations, getParties, getPosProducts } from "@/api/client";
+import { createPosSale, getParties, getPosProducts } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { useBusinessProfile } from "@/lib/businessProfile";
+import { useOperatingContext } from "@/lib/operatingContext";
 import { useAuth } from "@/lib/auth";
 import type { PosProduct, PosSale } from "@/types/api";
 
@@ -32,6 +33,7 @@ export default function PosQuickSale() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { data: profile } = useBusinessProfile();
+  const operating = useOperatingContext();
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [customerId, setCustomerId] = useState("");
@@ -40,9 +42,7 @@ export default function PosQuickSale() {
   const [dueDate, setDueDate] = useState("");
   const [priceOverrideReason, setPriceOverrideReason] = useState("");
   const [lastSale, setLastSale] = useState<PosSale | null>(null);
-
-  const locationsQuery = useQuery({ queryKey: ["pos-locations"], queryFn: getLocations });
-  const locationId = locationsQuery.data?.locations?.find((location: { is_active: boolean }) => location.is_active)?.location_id || locationsQuery.data?.data?.find((location: { is_active: boolean }) => location.is_active)?.location_id;
+  const locationId = operating.currentLocation?.is_saleable ? operating.currentLocation.location_id : undefined;
   const productsQuery = useQuery({ queryKey: ["pos-products", search, locationId], queryFn: () => getPosProducts({ q: search, location_id: locationId }), enabled: Boolean(locationId) });
   const partiesQuery = useQuery({ queryKey: ["pos-customers"], queryFn: getParties });
 

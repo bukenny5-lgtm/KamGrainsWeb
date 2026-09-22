@@ -1,4 +1,4 @@
-﻿# Implementation Log
+# Implementation Log
 
 ## 2026-09-18 — Phase 1 Universal Business Configuration / Branding
 
@@ -305,3 +305,73 @@ Added and applied forward migration `database/migrations/phase_23_return_settlem
 ## 2026-09-22 — Customer Return Details and Authorized Refund UI
 
 Added a shared Return Details dialog opened by the history View button or desktop row double-click. The dialog shows return metadata, lines, financial totals, normalized refund status, journal/stock identifiers, void rules, and refund history. Added a controlled partial/full refund form using the existing settlement API and `PROCESS_REFUND` permission model; no second refund engine or GL-account selector was introduced. Backend detail output now includes AR reduction and named refund processor data. Manual UI/refund acceptance remains pending.
+
+## 2026-09-22 — Phase 25 Multi-Branch Operations Foundation
+
+Added forward migration `phase_25_multi_branch_operations.sql` and applied it only to documented development database `kam_grains_db`. It creates one KAM HEAD_OFFICE branch, links the existing seven location IDs to it, adds one non-saleable branch transit location, sets the company default branch, maps existing user-location grants into `sec.user_branch`, and backfills branch dimensions on Sales Orders, Purchase Orders, expense vouchers, journals, AR payments, and AP payments to the single historical KAM branch. Existing transaction/location IDs were preserved.
+
+Added branch context/administration APIs, a DRAFT → IN_TRANSIT → RECEIVED transfer API using source-branch transit, shared frontend operating context, AppLayout branch/location controls, and branch-aware POS context. Sales Order/Purchase Order list/detail/create paths use a concrete branch. Shared product/customer/supplier masters and finance ledger remain company-wide. Only explicit `HEAD_OFFICE` bypasses branch membership. Branch/user/location administration UI and per-branch quarantine provisioning remain incomplete.
+
+**Acceptance status:** Phase 5 is not complete. No Branch A/B fixture or POS, SO/Delivery, AR/Receipt, PO/GRN/AP, returns/refunds, inventory, transfer, finance, reports, restricted-user, HQ, single-branch regression, Phase 4 regression, or authenticated browser matrix was run. Legacy route/report branch scope and end-to-end finance dimension coverage remain to audit and validate. Transit is per source branch; quarantine remains tied to its branch location. No production changes, deployment, or commit performed.
+
+## 2026-09-22 — Phase 5 Dashboard Branch-Scoping Fix
+
+Changed `GET /api/dashboard/summary` to scope each operational metric to middleware-validated active branch context. Branch attribution uses existing location, transaction, and journal dimensions: saleable stock by location; sales and AR by invoice delivery/POS source location; AP by GRN location; cash/P&L by `gl_journal.branch_id`; cleaning by raw and finished locations; PO by `purchase_order.branch_id`; GRN/delivery by location; movement rows by either branch-owned endpoint location; receipts by payment branch; and alerts by their source documents. Schema inspection found `pos_sale.location_id` (not `branch_id`), so POS credit invoices resolve to their source sale location. A selected branch is used for all users, including HEAD_OFFICE; consolidated Dashboard mode remains absent.
+
+Frontend Dashboard now reads the shared operating context and keys/refetches its query by selected branch. The API passes that branch in both `branch_id` and `x-branch-id`; mismatched values fail closed. Stock card states saleable quantity. Cash and net profit are marked unavailable if any journal lacks branch attribution, avoiding partial finance totals. No database migration or view change was needed. Authenticated branch isolation and browser retest remain pending; see the test log. No production changes, deployment, or commit.
+
+## 2026-09-22 — Phase 5 Ambiguous Locations Query Fix
+
+Qualified every location column in the joined `GET /api/locations` select as `l.*` and retained explicit `b.branch_code,b.branch_name`. This resolves the ambiguous shared names `company_id`, `branch_id`, `is_active`, `address`, `phone`, `email`, `created_at`, and `updated_at`. Existing `user_branch`/`user_location` predicates and HEAD_OFFICE role behavior are unchanged. Location-load errors no longer return raw database details. Shared context already auto-selects an authorized usable location and the header supports a selector for multiple assignments; AppLayout now gives a clear Setup-directed message when the active branch has no authorized location. Read-only direct SQL against the supplied user/branch returned seven rows; authenticated endpoint and Dashboard retests remain pending. No production changes, deployment, or commit.
+# 2026-09-22 — Phase 24 Multi-Location Foundation
+
+Added an additive location migration with controlled types, saleable/stock-holding/system flags, company assignment, parent/contact fields, company default location, configurable 50 active non-system location soft limit, user-location scope table, and MULTI_LOCATION feature flag. The Setup location editor captures type and stock behavior; location deletion is refused in favor of deactivation. Location APIs expose scoped locations, default-location changes, and user assignment updates with audit events. POS rejects unauthorized explicit location IDs; stock-on-hand requests enforce user location scope. Runtime migration/API/UI validation is pending; static validation passes. No production changes or deployment made.
+
+Read-only schema/runtime inspection: `app.location` initially contained `location_id`, `location_code`, `location_name`, `is_active`, and `created_at`; seven existing location codes were present. `app.location.company_id`, `app.company_profile.default_location_id`, and `sec.user_location` did not exist. Configured localhost database identity was `kam_grains_db`, not positively identifiable as development, so it was not mutated.
+
+Follow-up found prior project test records explicitly identify `kam_grains_db` as development. Applied the migration there; the original seven location IDs and names remained. Verified default FG_STORE, all type/flag backfills, two existing users assigned, and MULTI_LOCATION disabled by default. Rollback-only SQL guards and authenticated GET `/api/locations` smoke passed. Browser tests and POS/operations transaction matrix remain pending. Production was untouched.
+
+
+## 2026-09-22 — Phase 5 Acceptance Hardening
+
+Acceptance code review closed several confirmed legacy route scope omissions and added the Setup user branch/location assignment/default panel. Server-side route scopes and source-document guards now cover touched inventory, count, adjustment, cleaning, delivery, GRN, AR/AP, finance, POS and return routes; AR/AP payment allocation checks source branch/location. The shared context middleware rejects inactive branches. Dashboard, consolidated reports, finance aggregates and GRN variance remain HEAD_OFFICE-gated until their SQL sources are branch-safe. A rollback-only SQL fixture confirmed restricted versus multi-branch membership and branch-owned stock rows; this does not prove API authorization or transaction behavior. Authenticated workflows, report correctness, audit fields, and browser validation remain pending. No new migration, deployment, or commit was made in this acceptance turn.
+# Phase 5 reporting/finance + POS acceptance fix — 2026-09-22
+
+- Added `database/migrations/phase_26_multi_branch_reporting_finance_fix.sql`. It appends `branch_id` to `reporting.v_sales_event_lines` while retaining existing column order and event semantics, and keeps POS posting/reversal journal branch IDs aligned to the sale location. Applied idempotently to the configured development database only.
+- Finance routes now scope the whitelisted General Ledger, Trial Balance, P&L, Balance Sheet, and Cashbook to the selected branch, including journal/detail/voucher reads. Trial Balance totals balance in current development data. Balance Sheet includes branch current earnings and reports the shared-chart allocation limitation.
+- Reports routes now scope customer weekly performance, dormant customers, RFM, weekly sales, purchases, profit, and management summary to the branch; customer-concentration and other unlisted consolidated endpoints retain their existing HEAD_OFFICE gate.
+- POS location resolution, stock display, and sale reads enforce selected branch/location. POS A/B security and workflow behavior still require authenticated tests with two active branches.
+- Finance and Reports front ends include branch IDs in React query keys and use the existing shared branch/location context.
+- Validation: exact route SQL executed read-only against development DB; all listed queries executed, trial balance difference is zero, Balance Sheet equation matches within floating-point rounding, 33 posted POS sales have zero journal branch mismatches. Syntax and static/build status recorded in `docs/TEST_LOG.md`. Authenticated API/browser and Branch A/B POS tests were not run. No production/deployment/commit.
+# Phase 5 authenticated A/B runtime acceptance — 2026-09-22
+
+Created TEST_B and development-only branch-scoped accounts, locations, product lots, and controlled test transactions after confirming the configured database is `kam_grains_db` on localhost. Real API login sessions validated branch contexts, locations, Dashboard, Finance, weekly reports, POS isolation, Sales→Delivery→AR→Receipt, PO→GRN→AP→payment, returns/refunds, transfer dispatch/receive, count, and adjustment. Accepted defects received targeted fixes: Phase 30 for source-derived SAL journal branches and Phase 31 for PUR journal branches; the AP from-GRN query was qualified. Phase 31 is an applied forward migration on development. No deployment or commit. Overall remains in progress because of pending items in the test log.
+# Phase 5 Extension — 2026-09-22
+
+- Added STOCK_VISIBILITY read access independently of operating branch/location grants; inventory can filter by branch/location and masks cost without VIEW_TRANSFER_COST.
+- Added Internal Stock Request data model and UI with controlled states, partial line approvals, and supplied/outstanding quantities.
+- Extended inter-site transfers for request links, received quantities, variance reasons, atomic transit/receipt posting, duplicate-post protection, and split request fulfillment.
+- Added transfer history/detail and receipt actions; branch procurement modes and approval timestamps. Pending approval POs cannot proceed to GRN.
+- Added forward migrations 32–33; applied only to local development database. No production changes, deployment, or commit.
+- Authenticated API acceptance passed for visibility/POS denial, partial fulfillment, transfer operations, procurement modes, audit, unchanged inventory valuation and no GL journal creation. Browser and reverse Head Office request cases remain pending.
+## Phase 5 Final Closure Update — 2026-09-22
+
+Added the Inventory Category filter using the existing getProductCategories API and inv.product.category_id query filter. The selector includes All Categories and combines with branch/location/search without a page reload. Browser acceptance was not possible because the Codex browser had no tabs or authenticated session; reverse Head Office request remains pending.
+## Phase 5 Final Acceptance Update — 2026-09-22
+
+Extended stock transfer receiving to support a later controlled receipt from RECEIVED_WITH_VARIANCE. The endpoint accumulates received quantity, prevents receiving beyond remaining transit, clears variance metadata only when fully received, and preserves destination authorization. Updated Transfer Detail to show remaining in transit and permit Receive Remaining only for the unresolved remainder.
+## Phase 5 Frontend Completion — 2026-09-22
+
+Confirmed existing Stock Requests and Inter-Site Transfers routes in App.tsx and AppLayout.tsx. Preserved their permission-gated navigation and existing API client usage. Completed transfer detail presentation for dispatched, received, remaining transit, variance, reason, actors and timestamps, with a Receive Remaining action for unresolved variance. Backend later-receipt support accumulates only the remaining quantity.
+## Phase 5 Authentication Timeout Fix — 2026-09-22
+
+Aligned frontend/.env.local with the backend development port by changing VITE_API_BASE_URL from localhost:3001/api to localhost:3000/api. No auth route, password, role, branch security, timeout, or production configuration was changed. Direct database and HTTP timing confirmed the login path responds successfully on the configured port.
+## Phase 5 Source-Lot Selection Fix — 2026-09-22
+
+Corrected Internal Stock Requests source-location loading to pass stock_visibility=true for the explicitly selected source branch, preventing the current operating branch header from supplying stale locations. Preferred source branch/location IDs are used as defaults, and changing source branch clears the selected location. Transfer preparation now allocates approved outstanding quantity across every eligible lot returned for the selected source location, preserving lot IDs and allowing partial availability. Existing backend revalidation remains unchanged.
+## Phase 5 Transfer Detail UI Correction — 2026-09-23
+
+Updated InterSiteTransfers.tsx with a shared three-decimal quantity formatter, UGX cost formatter, readable statuses and variance reasons, responsive padded table layout, explicit Receive Now/Received Total/Remaining In Transit columns, and consistent timestamps. Extended the transfer detail API select with product UOM and actor display names. Database quantities and state transitions remain unchanged.
+## Phase 5 Request Direction UI Fix — 2026-09-23
+
+Added explicit Requesting Branch and Receiving Location controls to InternalStockRequests.tsx. Requesting branches use the authorized branch list; locations are reloaded by selected branch and stale location state is cleared. Creation now sends the selected branch/location rather than only the current operating context. Request history/detail APIs now return receiving location and actor display fields, and the UI shows requesting branch, receiving location and preferred source.

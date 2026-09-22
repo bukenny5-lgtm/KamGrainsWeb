@@ -2,8 +2,23 @@ import express from "express";
 import { pool, query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, getUserRoles } from "../middleware/permissions.js";
+import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
 
 const router = express.Router();
+router.use(requireAuth,requireLocationAccessWhenSpecified);
+const allBranches=(req)=>getUserRoles(req).includes("HEAD_OFFICE");
+const allLocations=(req)=>getUserRoles(req).some((role)=>["ADMIN","MANAGER","AUDITOR","HEAD_OFFICE"].includes(role));
+async function assertArApplicationScope(req,applications){
+  for(const app of applications||[]){
+    const r=await query(`SELECT loc.location_id,loc.branch_id FROM sal.ar_invoice ai LEFT JOIN sal.delivery d ON d.delivery_id=ai.delivery_id LEFT JOIN sal.pos_sale ps ON ps.credit_ar_invoice_id=ai.ar_invoice_id LEFT JOIN app.location loc ON loc.location_id=COALESCE(d.location_id,ps.location_id) WHERE ai.ar_invoice_id=$1`,[app.ar_invoice_id]);
+    if(!r.rowCount)continue;
+    const row=r.rows[0];
+    if(!row.branch_id&&!allBranches(req))throw Object.assign(new Error("Invoice has no branch context; only HEAD_OFFICE may apply payment."),{status:403});
+    if(!allBranches(req)&&row.branch_id!==req.branchId)throw Object.assign(new Error("Payment applications must belong to the active branch."),{status:403});
+    if(row.location_id&&!allLocations(req)&&!(await query(`SELECT 1 FROM sec.user_location WHERE user_id=$1 AND location_id=$2 AND is_active`,[req.user?.user_id,row.location_id])).rowCount)throw Object.assign(new Error("You are not authorized for an applied invoice location."),{status:403});
+  }
+}
+router.param("paymentId",async(req,res,next,value)=>{try{const r=await query(`SELECT branch_id FROM sal.ar_payment WHERE ar_payment_id=$1`,[value]);if(!r.rowCount)return res.status(404).json({success:false,message:"Customer payment not found."});if(!allBranches(req)&&r.rows[0].branch_id!==req.branchId)return res.status(403).json({success:false,message:"You are not authorized for this receipt branch."});next();}catch(error){next(error);}});
 function getArPaymentErrorStatus(error, fallbackStatus = 500) {
   const code = String(error?.code || "");
 
@@ -84,6 +99,7 @@ router.get("/", async (req, res) => {
         ON c.party_id = p.customer_id
       LEFT JOIN sal.ar_payment_apply pa
         ON pa.ar_payment_id = p.ar_payment_id
+      WHERE (p.branch_id=$1 OR $2::boolean)
       GROUP BY
         p.ar_payment_id,
         p.receipt_no,
@@ -96,7 +112,7 @@ router.get("/", async (req, res) => {
         p.created_at,
         p.posted_journal_id
       ORDER BY p.created_at DESC, p.receipt_no DESC;
-    `);
+    `,[req.branchId,allBranches(req)]);
 
     res.json({
       success: true,
@@ -150,6 +166,7 @@ router.get("/reports/summary", async (req, res) => {
         ON pa.ar_payment_id = p.ar_payment_id
       LEFT JOIN sal.ar_invoice ai
         ON ai.ar_invoice_id = pa.ar_invoice_id
+      WHERE (p.branch_id=$1 OR $2::boolean)
       GROUP BY
         p.ar_payment_id,
         p.receipt_no,
@@ -162,7 +179,7 @@ router.get("/reports/summary", async (req, res) => {
         p.created_at,
         p.posted_journal_id
       ORDER BY p.created_at DESC, p.receipt_no DESC;
-    `);
+    `,[req.branchId,allBranches(req)]);
 
     res.json({
       success: true,
@@ -207,9 +224,9 @@ router.get("/:paymentId", async (req, res) => {
       FROM sal.ar_payment p
       LEFT JOIN app.party c
         ON c.party_id = p.customer_id
-      WHERE p.ar_payment_id = $1;
+      WHERE p.ar_payment_id = $1 AND (p.branch_id=$2 OR $3::boolean);
       `,
-      [paymentId]
+      [paymentId,req.branchId,allBranches(req)]
     );
 
     if (headerResult.rowCount === 0) {
@@ -412,6 +429,8 @@ router.post(
         }
       }
 
+      await assertArApplicationScope(req, applications);
+
       // ----- PHASE 4: backdate validation -----
       const todayStr = new Date().toISOString().split("T")[0];
       const finalTransactionDate = transaction_date || payment_date || todayStr;
@@ -522,6 +541,7 @@ router.post(
         `
         INSERT INTO sal.ar_payment (
           ar_payment_id,
+          branch_id,
           receipt_no,
           customer_id,
           payment_date,
@@ -538,10 +558,12 @@ router.post(
           $4,
           $5,
           $6,
+          $7,
           now()
         )
         RETURNING
           ar_payment_id,
+          branch_id,
           receipt_no,
           customer_id,
           payment_date,
@@ -552,6 +574,7 @@ router.post(
           posted_journal_id;
         `,
         [
+          req.branchId,
           receiptNo,
           customer_id,
           payment_date,

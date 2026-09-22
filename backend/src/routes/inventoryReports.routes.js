@@ -1,19 +1,24 @@
 import express from "express";
 import { query } from "../db.js";
+import { requireAuth } from "../middleware/auth.js";
+import { getUserRoles } from "../middleware/permissions.js";
+import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
 
 const router = express.Router();
+router.use(requireAuth, requireLocationAccessWhenSpecified);
 
 /**
  * GET /api/inventory-reports/stock-on-hand
  * Shows current stock balance by product, lot, and location.
  * Includes unit_cost and supports include_closed toggle.
  */
-router.get("/stock-on-hand", async (req, res) => {
+router.get("/stock-on-hand", requireAuth, async (req, res) => {
   try {
     const { product_id, location_id, saleable, include_closed } = req.query;
 
-    const params = [];
+    const params = [req.user?.user_id, getUserRoles(req).some((role) => ["ADMIN", "MANAGER", "AUDITOR", "HEAD_OFFICE"].includes(role)), req.branchId];
     const conditions = [];
+    conditions.push("loc.branch_id = $3");
 
     // Choose view based on include_closed
     const viewName = include_closed === 'true'
@@ -26,13 +31,18 @@ router.get("/stock-on-hand", async (req, res) => {
     }
 
     if (location_id) {
+      const permitted = params[1] || (await query(`SELECT 1 FROM sec.user_location WHERE user_id=$1 AND location_id=$2 AND is_active`, [req.user?.user_id, location_id])).rowCount > 0;
+      if (!permitted) return res.status(403).json({ success: false, message: "You are not allowed to view stock at this location." });
       params.push(location_id);
       conditions.push(`soh.location_id = $${params.length}`);
     }
 
+    conditions.push(`($2::boolean OR EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$1 AND ul.location_id=soh.location_id AND ul.is_active))`);
+
     if (saleable !== undefined) {
       params.push(saleable === "true");
       conditions.push(`p.is_saleable = $${params.length}`);
+      if (saleable === "true") conditions.push("loc.is_saleable=true");
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -55,6 +65,8 @@ router.get("/stock-on-hand", async (req, res) => {
         COALESCE(lc.unit_cost, avg_cost.unit_cost, 0) AS average_unit_cost,
         COALESCE(lc.unit_cost, avg_cost.unit_cost, 0) AS avg_unit_cost
       FROM ${viewName} soh
+      LEFT JOIN app.location loc ON loc.location_id=soh.location_id
+      LEFT JOIN inv.product p ON p.product_id=soh.product_id
       LEFT JOIN inv.v_lot_unit_cost lc
         ON lc.lot_id = soh.lot_id
       LEFT JOIN LATERAL (
@@ -100,9 +112,10 @@ router.get("/stock-summary", async (req, res) => {
         COUNT(DISTINCT lot_id) AS lot_count,
         COUNT(DISTINCT location_id) AS location_count
       FROM inv.v_stock_on_hand_active
+      WHERE location_id IN (SELECT location_id FROM app.location WHERE branch_id=$1 AND is_active)
       GROUP BY product_id, sku, product_name
       ORDER BY product_name;
-    `);
+    `,[req.branchId]);
 
     res.json({
       success: true,
@@ -168,8 +181,10 @@ router.get("/stock-movements", async (req, res) => {
         ON to_loc.location_id = sml.to_location_id
       LEFT JOIN sec.app_user u
         ON u.user_id = sm.created_by
+      WHERE COALESCE(from_loc.branch_id,to_loc.branch_id)=$1
+        AND ($2::boolean OR EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$3 AND ul.location_id IN(sml.from_location_id,sml.to_location_id) AND ul.is_active))
       ORDER BY sm.movement_ts DESC, sm.created_at DESC;
-    `);
+    `,[req.branchId,getUserRoles(req).some((role)=>["ADMIN","MANAGER","AUDITOR","HEAD_OFFICE"].includes(role)),req.user?.user_id]);
 
     res.json({
       success: true,

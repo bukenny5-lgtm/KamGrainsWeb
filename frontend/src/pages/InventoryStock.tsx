@@ -2,7 +2,9 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCcw, Search, X } from "lucide-react";
 
-import { getStockOnHand } from "@/api/client";
+import { getProductCategories, getStockDetail, getStockOnHand } from "@/api/client";
+import { getBranches, getLocationsForBranch } from "@/api/client";
+import { useOperatingContext } from "@/lib/operatingContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,15 +22,24 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 // ─── Types ────────────────────────────────────────────────
 type StockRow = {
+  branch_id: string;
+  branch_name: string;
   product_id: string;
   sku: string;
   product_name: string;
+  uom_code: string;
   lot_id: string;
   lot_code: string;
   expiry_date: string | null;
   location_id: string;
   location_code: string;
   location_name: string;
+  location_type: string;
+  location_is_saleable: boolean;
+  category_id?: string | null;
+  category_code?: string | null;
+  category_name?: string | null;
+  unit_cost?: string | null;
   qty_on_hand: string;
   lot_status?: string; // 'ACTIVE' | 'CLOSED' | 'EXPIRED' | undefined
 };
@@ -68,17 +79,28 @@ function getStatusDescription(showClosed: boolean) {
 
 // ─── Component ────────────────────────────────────────────
 export default function InventoryStock() {
+  const { currentBranch } = useOperatingContext();
   const [search, setSearch] = useState("");
+  const [selectedBranchId, setSelectedBranchId] = useState("");
+  const [selectedLocationId, setSelectedLocationId] = useState("");
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
+  const [selectedKey, setSelectedKey] = useState("");
+  const [selectedRow, setSelectedRow] = useState<StockRow | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [showClosedLots, setShowClosedLots] = useState(false);
 
   // ── Query ──
+  const branchesQuery = useQuery({ queryKey: ["stock-visibility-branches"], queryFn: () => getBranches(true) });
+  const categoriesQuery = useQuery({ queryKey: ["stock-visibility-categories"], queryFn: getProductCategories });
+  const branchId = selectedBranchId || currentBranch?.branch_id || branchesQuery.data?.branches?.[0]?.branch_id || "";
+  const locationsQuery = useQuery({ queryKey: ["stock-visibility-locations", branchId], queryFn: () => getLocationsForBranch(branchId, true), enabled: Boolean(branchId) });
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery<
     ApiResponse
   >({
-    queryKey: ["stock-on-hand", { include_closed: showClosedLots }],
-    queryFn: () => getStockOnHand(showClosedLots),
+    queryKey: ["stock-on-hand", { include_closed: showClosedLots, branch_id: branchId, location_id: selectedLocationId, category_id: selectedCategoryId }],
+    queryFn: () => getStockOnHand({ include_closed: showClosedLots, branch_id: branchId, location_id: selectedLocationId || null, category_id: selectedCategoryId || null }),
   });
+  const detailQuery = useQuery({ queryKey: ["stock-detail", selectedRow?.product_id, selectedRow?.location_id, selectedRow?.lot_id, selectedRow?.branch_id], queryFn: () => getStockDetail(selectedRow!.product_id, selectedRow!.location_id, selectedRow!.lot_id,selectedRow!.branch_id), enabled: Boolean(selectedRow) });
 
   // ── Derived state ──
   const rows = useMemo(() => data?.data || [], [data]);
@@ -229,6 +251,23 @@ export default function InventoryStock() {
           <CardTitle>Inventory Balance</CardTitle>
 
           <div className="flex flex-wrap items-center gap-4">
+            <label className="text-sm">Branch
+              <select className="ml-2 h-10 rounded-md border bg-white px-3" value={branchId} onChange={(e) => { setSelectedBranchId(e.target.value); setSelectedLocationId(""); }}>
+                {(branchesQuery.data?.branches || []).map((branch: {branch_id:string;branch_name:string}) => <option key={branch.branch_id} value={branch.branch_id}>{branch.branch_name}</option>)}
+              </select>
+            </label>
+            <label className="text-sm">Location
+              <select className="ml-2 h-10 rounded-md border bg-white px-3" value={selectedLocationId} onChange={(e) => setSelectedLocationId(e.target.value)}>
+                <option value="">All authorized locations</option>
+                {(locationsQuery.data?.locations || []).map((location: {location_id:string;location_name:string}) => <option key={location.location_id} value={location.location_id}>{location.location_name}</option>)}
+              </select>
+            </label>
+            <label className="text-sm">Category
+              <select className="ml-2 h-10 rounded-md border bg-white px-3" value={selectedCategoryId} onChange={(e) => setSelectedCategoryId(e.target.value)}>
+                <option value="">All Categories</option>
+                {(categoriesQuery.data?.categories || []).filter((category: any) => category.is_active !== false).map((category: any) => <option key={category.category_id} value={category.category_id}>{category.category_code} - {category.category_name}</option>)}
+              </select>
+            </label>
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
               <Input
@@ -261,13 +300,14 @@ export default function InventoryStock() {
                   <TableHead>Expiry</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Qty</TableHead>
+                  <TableHead className="text-right">Detail</TableHead>
                 </TableRow>
               </TableHeader>
 
               <TableBody>
                 {filteredRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
+                    <TableCell colSpan={8} className="h-24 text-center">
                       {search ? (
                         <div>
                           <p className="text-slate-500">No stock found matching your search.</p>
@@ -293,6 +333,9 @@ export default function InventoryStock() {
                   filteredRows.map((row) => (
                     <TableRow
                       key={`${row.product_id}-${row.lot_id}-${row.location_id}`}
+                      onClick={() => setSelectedKey(`${row.product_id}-${row.lot_id}-${row.location_id}`)}
+                      onDoubleClick={() => setSelectedRow(row)}
+                      className={`cursor-pointer ${selectedKey === `${row.product_id}-${row.lot_id}-${row.location_id}` ? "bg-slate-100" : ""}`}
                     >
                       <TableCell className="font-medium">{row.sku}</TableCell>
                       <TableCell>{row.product_name}</TableCell>
@@ -307,6 +350,7 @@ export default function InventoryStock() {
                       <TableCell className="text-right font-semibold">
                         {formatQty(row.qty_on_hand)}
                       </TableCell>
+                      <TableCell className="text-right"><Button size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); setSelectedRow(row); }}>View</Button></TableCell>
                     </TableRow>
                   ))
                 )}
@@ -321,6 +365,12 @@ export default function InventoryStock() {
           )}
         </CardContent>
       </Card>
+      {selectedRow && <div role="dialog" aria-modal="true" aria-label="Stock detail" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setSelectedRow(null)}>
+        <Card className="w-full max-w-xl" onClick={(event) => event.stopPropagation()}><CardHeader><CardTitle>Stock Detail</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2 text-sm">
+          <p><b>Product:</b> {selectedRow.product_name}</p><p><b>SKU:</b> {selectedRow.sku}</p><p><b>Branch:</b> {selectedRow.branch_name}</p><p><b>Location:</b> {selectedRow.location_name} ({selectedRow.location_type})</p><p><b>Saleable:</b> {selectedRow.location_is_saleable ? "Yes" : "No"}</p><p><b>On hand:</b> {formatQty(selectedRow.qty_on_hand)} {selectedRow.uom_code}</p><p><b>Lot:</b> {selectedRow.lot_code || "—"}</p><p><b>Expiry:</b> {selectedRow.expiry_date ? new Date(selectedRow.expiry_date).toLocaleDateString() : "—"}</p><p><b>Unit cost:</b> {selectedRow.unit_cost == null ? "Restricted" : Number(selectedRow.unit_cost).toLocaleString()}</p>
+          <div className="sm:col-span-2"><b>Recent Movements</b>{detailQuery.isLoading?<p>Loading…</p>:detailQuery.data?.data?.recent_movements?.length?<ul className="mt-2 space-y-1">{detailQuery.data.data.recent_movements.map((movement:any)=><li key={movement.movement_id}>{movement.document_no} · {movement.movement_type} · {formatQty(movement.qty)} · {new Date(movement.created_at).toLocaleString()}</li>)}</ul>:<p className="mt-1 text-slate-500">No recent movements.</p>}</div><div className="sm:col-span-2 flex justify-end"><Button onClick={() => setSelectedRow(null)}>Close</Button></div>
+        </CardContent></Card>
+      </div>}
     </div>
   );
 }

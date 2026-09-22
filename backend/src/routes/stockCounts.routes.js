@@ -1,9 +1,22 @@
 import express from "express";
 import { pool, query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission } from "../middleware/permissions.js";
+import { getUserRoles, requirePermission } from "../middleware/permissions.js";
+import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
 
 const router = express.Router();
+router.use(requireAuth, requireLocationAccessWhenSpecified);
+const allLocations = (req) => getUserRoles(req).some((role) => ["ADMIN", "MANAGER", "AUDITOR", "HEAD_OFFICE"].includes(role));
+router.param("countNo", async (req,res,next,countNo) => {
+  try {
+    const found=await query(`SELECT sc.location_id,l.branch_id FROM inv.stock_count sc JOIN app.location l ON l.location_id=sc.location_id WHERE sc.count_no=$1`,[countNo]);
+    if(!found.rowCount)return res.status(404).json({success:false,message:"Stock count not found."});
+    const row=found.rows[0];
+    if(row.branch_id!==req.branchId)return res.status(403).json({success:false,message:"You are not authorized for this stock count branch."});
+    if(!allLocations(req)&&!(await query(`SELECT 1 FROM sec.user_location WHERE user_id=$1 AND location_id=$2 AND is_active`,[req.user?.user_id,row.location_id])).rowCount)return res.status(403).json({success:false,message:"You are not authorized for this stock count location."});
+    next();
+  } catch(error){next(error);}
+});
 
 /**
  * GET /api/stock-counts
@@ -33,6 +46,7 @@ router.get("/", async (req, res) => {
         ON loc.location_id = sc.location_id
       LEFT JOIN inv.stock_count_line scl
         ON scl.stock_count_id = sc.stock_count_id
+      WHERE loc.branch_id=$1 AND ($2::boolean OR EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$3 AND ul.location_id=sc.location_id AND ul.is_active))
       GROUP BY
         sc.stock_count_id,
         sc.count_no,
@@ -46,7 +60,7 @@ router.get("/", async (req, res) => {
         sc.created_at,
         sc.posted_movement_id
       ORDER BY sc.created_at DESC;
-    `);
+    `,[req.branchId,allLocations(req),req.user?.user_id]);
 
     res.json({
       success: true,

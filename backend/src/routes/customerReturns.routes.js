@@ -1,10 +1,16 @@
 import express from "express";
 import { pool, query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission } from "../middleware/permissions.js";
+import { getUserRoles, requirePermission } from "../middleware/permissions.js";
 import { setDatabaseUserContext, UUID_PATTERN } from "../utils/uuid.js";
+import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
 
 const router = express.Router();
+router.use(requireAuth, requireLocationAccessWhenSpecified);
+const allBranches=(req)=>getUserRoles(req).includes("HEAD_OFFICE");
+const allLocations=(req)=>getUserRoles(req).some((role)=>["ADMIN","MANAGER","AUDITOR","HEAD_OFFICE"].includes(role));
+async function canAccessReturnLocation(req,locationId){if(!locationId)return allBranches(req);const r=await query(`SELECT 1 FROM app.location l WHERE l.location_id=$1 AND (l.branch_id=$2 OR $3::boolean) AND ($4::boolean OR EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$5 AND ul.location_id=l.location_id AND ul.is_active))`,[locationId,req.branchId,allBranches(req),allLocations(req),req.user?.user_id]);return r.rowCount>0;}
+router.param("id",async(req,res,next,value)=>{try{const r=await query(`SELECT location_id FROM sal.customer_return WHERE customer_return_id=$1`,[value]);if(!r.rowCount)return res.status(404).json({success:false,message:"Customer return not found."});if(!(await canAccessReturnLocation(req,r.rows[0].location_id)))return res.status(403).json({success:false,message:"You are not authorized for this return branch/location."});next();}catch(error){next(error);}});
 
 async function resolveSourceId(sourceType, sourceIdentifier) {
   const identifier = String(sourceIdentifier || "").trim();
@@ -57,8 +63,8 @@ async function loadSource(sourceType, sourceId) {
 
 router.get("/", requireAuth, requirePermission("VIEW_CUSTOMER_RETURNS"), async (req, res) => {
   try {
-    const values = [];
-    const filters = [];
+    const values = [req.branchId,allBranches(req),req.user?.user_id,allLocations(req)];
+    const filters = [`(loc.branch_id=$1 OR $2::boolean)`,`($4::boolean OR EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$3 AND ul.location_id=r.location_id AND ul.is_active))`];
     const add = (value) => { values.push(value); return `$${values.length}`; };
     if (req.query.search) {
       const term = `%${String(req.query.search).trim()}%`;
@@ -86,6 +92,7 @@ router.get("/", requireAuth, requirePermission("VIEW_CUSTOMER_RETURNS"), async (
       LEFT JOIN app.party p ON p.party_id=r.customer_id
       LEFT JOIN sec.app_user created_u ON created_u.user_id=r.created_by
       LEFT JOIN sec.app_user posted_u ON posted_u.user_id=r.posted_by
+      LEFT JOIN app.location loc ON loc.location_id=r.location_id
       LEFT JOIN sal.customer_return_line l ON l.customer_return_id=r.customer_return_id
       ${where}
       GROUP BY r.customer_return_id,p.party_name,created_u.full_name,posted_u.full_name
@@ -94,7 +101,7 @@ router.get("/", requireAuth, requirePermission("VIEW_CUSTOMER_RETURNS"), async (
   } catch (error) { return res.status(500).json({ success: false, message: "Failed to load customer returns.", error: error.message }); }
 });
 
-router.get("/summary", requireAuth, requirePermission("VIEW_CUSTOMER_RETURNS"), async (_req, res) => {
+router.get("/summary", requireAuth, requirePermission("VIEW_CUSTOMER_RETURNS"), async (req, res) => {
   try {
     const result = await query(`
       SELECT COUNT(*)::int AS total_returns,
@@ -107,18 +114,20 @@ router.get("/summary", requireAuth, requirePermission("VIEW_CUSTOMER_RETURNS"), 
              COALESCE(SUM(l.quarantine_qty),0) AS quarantine_qty,
              COALESCE(SUM(l.quarantine_value),0) AS quarantine_inventory_value
       FROM sal.customer_return r
+      JOIN app.location loc ON loc.location_id=r.location_id
       LEFT JOIN LATERAL (
         SELECT SUM(crl.qty_returned * crl.original_unit_price) AS return_value,
                SUM(crl.qty_returned) FILTER (WHERE crl.return_disposition='QUARANTINE') AS quarantine_qty,
                SUM(crl.qty_returned * crl.original_unit_cost) FILTER (WHERE crl.return_disposition='QUARANTINE') AS quarantine_value
         FROM sal.customer_return_line crl
         WHERE crl.customer_return_id=r.customer_return_id
-      ) l ON true`);
+      ) l ON true
+      WHERE (loc.branch_id=$1 OR $2::boolean) AND ($3::boolean OR EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$4 AND ul.location_id=r.location_id AND ul.is_active))`,[req.branchId,allBranches(req),allLocations(req),req.user?.user_id]);
     return res.json({ success: true, summary: result.rows[0] || {} });
   } catch (error) { return res.status(500).json({ success: false, message: "Failed to load customer return summary.", error: error.message }); }
 });
 
-router.get("/quarantine", requireAuth, requirePermission("VIEW_QUARANTINE"), async (_req, res) => {
+router.get("/quarantine", requireAuth, requirePermission("VIEW_QUARANTINE"), async (req, res) => {
   try {
     const result = await query(`
       SELECT sml.product_id, p.product_name, p.sku, sml.lot_id, SUM(sml.qty) AS qty,
@@ -129,9 +138,11 @@ router.get("/quarantine", requireAuth, requirePermission("VIEW_QUARANTINE"), asy
       JOIN inv.stock_movement_line sml ON sml.movement_id=sm.movement_id
       JOIN inv.product p ON p.product_id=sml.product_id
       JOIN app.location loc ON loc.location_id=sml.to_location_id
-      WHERE loc.location_code='RETURN_QUARANTINE' AND sm.movement_type='CUSTOMER_RETURN'
+      WHERE loc.location_type='QUARANTINE' AND loc.is_system=true AND loc.is_saleable=false AND sm.movement_type='CUSTOMER_RETURN'
+        AND (loc.branch_id=$1 OR $2::boolean)
+        AND ($3::boolean OR EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$4 AND ul.location_id=loc.location_id AND ul.is_active))
       GROUP BY sml.product_id,p.product_name,p.sku,sml.lot_id,sml.unit_cost,loc.location_code,loc.location_name,sm.document_no,sm.created_at,sm.notes
-      ORDER BY sm.created_at DESC`);
+      ORDER BY sm.created_at DESC`,[req.branchId,allBranches(req),allLocations(req),req.user?.user_id]);
     return res.json({ success: true, data: result.rows, quarantine: result.rows });
   } catch (error) { return res.status(500).json({ success: false, message: "Failed to load quarantine inventory.", error: error.message }); }
 });
@@ -144,6 +155,7 @@ router.get("/source/:sourceType/:sourceId", requireAuth, requirePermission("VIEW
     if (!sourceId) return res.status(404).json({ success: false, message: `${sourceType === "POS" ? "POS sale" : "Delivery"} ${req.params.sourceId} was not found.` });
     const source = await loadSource(sourceType, sourceId);
     if (!source) return res.status(404).json({ success: false, message: `${sourceType === "POS" ? "POS sale" : "Delivery"} ${req.params.sourceId} was not found or is not eligible for return.` });
+    if(!(await canAccessReturnLocation(req,source.location_id)))return res.status(403).json({success:false,message:"You are not authorized for this return source branch/location."});
     return res.json({ success: true, source });
   } catch (error) { return res.status(400).json({ success: false, message: "Failed to load return source.", error: error.message }); }
 });
@@ -217,6 +229,7 @@ router.post("/", requireAuth, requirePermission("CREATE_CUSTOMER_RETURN"), async
     if (!sourceId) return res.status(404).json({ success: false, message: `${sourceType === "POS" ? "POS sale" : "Delivery"} ${body.source_id} was not found.` });
     const source = await loadSource(sourceType, sourceId);
     if (!source) return res.status(404).json({ success: false, message: `${sourceType === "POS" ? "POS sale" : "Delivery"} ${body.source_id} was not found or is not eligible for return.` });
+    if(!(await canAccessReturnLocation(req,source.location_id)))return res.status(403).json({success:false,message:"You are not authorized for this return source branch/location."});
     if (!Array.isArray(body.lines) || !body.lines.length) return res.status(400).json({ success: false, message: "At least one return line is required." });
     const policyResult = await query("SELECT * FROM sal.return_policy WHERE is_active=true ORDER BY created_at LIMIT 1");
     const policy = policyResult.rows[0];

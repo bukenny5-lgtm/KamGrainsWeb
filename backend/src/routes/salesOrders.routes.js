@@ -1,9 +1,12 @@
 import express from "express";
 import { pool, query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission } from "../middleware/permissions.js";
+import { getUserRoles, requirePermission } from "../middleware/permissions.js";
+import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
 
 const router = express.Router();
+router.use(requireAuth, requireLocationAccessWhenSpecified);
+const branchWide = (req) => getUserRoles(req).includes("HEAD_OFFICE");
 
 /**
  * GET /api/sales-orders
@@ -14,6 +17,7 @@ router.get("/", async (req, res) => {
     const result = await query(`
       SELECT
         so.so_id,
+        so.branch_id,
         so.so_no,
         so.customer_id,
         c.party_name AS customer_name,
@@ -31,8 +35,10 @@ router.get("/", async (req, res) => {
         ON u.user_id = so.created_by
       LEFT JOIN sal.sales_order_line sol
         ON sol.so_id = so.so_id
+      WHERE ($1::boolean OR so.branch_id=$2)
       GROUP BY
         so.so_id,
+        so.branch_id,
         so.so_no,
         so.customer_id,
         c.party_name,
@@ -42,7 +48,7 @@ router.get("/", async (req, res) => {
         u.full_name,
         so.created_at
       ORDER BY so.created_at DESC, so.so_no DESC;
-    `);
+    `, [branchWide(req), req.branchId]);
 
     res.json({
       success: true,
@@ -70,6 +76,7 @@ router.get("/:soId", async (req, res) => {
       `
       SELECT
         so.so_id,
+        so.branch_id,
         so.so_no,
         so.customer_id,
         c.party_name AS customer_name,
@@ -98,9 +105,9 @@ router.get("/:soId", async (req, res) => {
         ON c.party_id = so.customer_id
       LEFT JOIN sec.app_user u
         ON u.user_id = so.created_by
-      WHERE so.so_id = $1;
+      WHERE so.so_id = $1 AND ($2::boolean OR so.branch_id=$3);
       `,
-      [soId]
+      [soId, branchWide(req), req.branchId]
     );
 
     if (headerResult.rowCount === 0) {
@@ -222,6 +229,7 @@ router.post(
         `
         INSERT INTO sal.sales_order (
           so_id,
+          branch_id,
           so_no,
           customer_id,
           order_date,
@@ -231,15 +239,17 @@ router.post(
         )
         VALUES (
           gen_random_uuid(),
-          'SO-' || to_char(now(), 'YYYYMMDD-HH24MISS'),
           $1,
+          'SO-' || to_char(now(), 'YYYYMMDD-HH24MISS'),
           $2,
-          'OPEN',
           $3,
+          'OPEN',
+          $4,
           now()
         )
         RETURNING
           so_id,
+          branch_id,
           so_no,
           customer_id,
           order_date,
@@ -248,6 +258,7 @@ router.post(
           created_at;
         `,
         [
+          req.branchId,
           customer_id,
           order_date,
           created_by || req.user?.user_id || null
@@ -349,10 +360,10 @@ router.patch(
         `
         SELECT so_id, so_no, status
         FROM sal.sales_order
-        WHERE so_id = $1
+        WHERE so_id = $1 AND ($2::boolean OR branch_id=$3)
         FOR UPDATE;
         `,
-        [soId]
+        [soId, branchWide(req), req.branchId]
       );
 
       if (soResult.rowCount === 0) {
@@ -410,10 +421,10 @@ router.patch(
         `
         UPDATE sal.sales_order
         SET status = 'CANCELLED'
-        WHERE so_id = $1
+        WHERE so_id = $1 AND ($2::boolean OR branch_id=$3)
         RETURNING so_id, so_no, customer_id, order_date, status, created_by, created_at;
         `,
-        [soId]
+        [soId, branchWide(req), req.branchId]
       );
 
       await client.query("COMMIT");
@@ -508,10 +519,10 @@ router.patch(
         `
         SELECT so_id, so_no, status
         FROM sal.sales_order
-        WHERE so_id = $1
+        WHERE so_id = $1 AND ($2::boolean OR branch_id=$3)
         FOR UPDATE;
         `,
-        [soId]
+        [soId, branchWide(req), req.branchId]
       );
 
       if (soResult.rowCount === 0) {
@@ -555,10 +566,10 @@ router.patch(
         UPDATE sal.sales_order
         SET customer_id = $2,
             order_date = $3
-        WHERE so_id = $1
+        WHERE so_id = $1 AND ($4::boolean OR branch_id=$5)
         RETURNING so_id, so_no, customer_id, order_date, status, created_by, created_at;
         `,
-        [soId, customer_id, order_date]
+        [soId, customer_id, order_date, branchWide(req), req.branchId]
       );
 
       await client.query(

@@ -48,6 +48,7 @@ import posRoutes from "./routes/pos.routes.js";
 import customerReturnRoutes from "./routes/customerReturns.routes.js";
 import returnPolicyRoutes from "./routes/returnPolicy.routes.js";
 import taxRoutes from "./routes/tax.routes.js";
+import efrisRoutes from "./routes/efris.routes.js";
 
 // ✅ Import reconciliation routes
 import reconciliationRoutes from "./routes/reconciliations.routes.js";
@@ -111,6 +112,7 @@ app.use("/api/pos", posRoutes);
 app.use("/api/customer-returns", customerReturnRoutes);
 app.use("/api/return-policy", returnPolicyRoutes);
 app.use("/api/tax", taxRoutes);
+app.use("/api/efris", efrisRoutes);
 
 // ===============================
 // Operations routes

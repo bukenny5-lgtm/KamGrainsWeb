@@ -824,3 +824,17 @@ Reverse Head Office request, reverse authorization, stock before/after, transit 
 | Payment foundation deterministic test | PASS | `node backend/test/payment-channel.foundation.test.mjs` covered allowed/invalid status transitions, duplicate-reference detection, active/manual eligibility, and branch restriction behavior. |
 | Manual MTN/Airtel/Card/Bank/Cash/Credit browser acceptance | PENDING | Requires an authorized browser session and explicitly configured active manual development channels. |
 | Provider API/sandbox/live | NOT RUN | Deliberately out of scope; no credentials, network calls, callbacks, or live mode. |
+
+## Phase 7 EFRIS foundation — 2026-09-24
+
+| Check | Result | Evidence |
+|---|---|---|
+| Repository EFRIS inspection | PASS | No existing EFRIS adapter, URA transport, FDN/QR model, or official specification found. |
+| Migration 40 | PASS | Applied to local `kam_grains_db`; EFRIS remains disabled and no historical documents were submitted. |
+| Activation precheck | PASS-CODE | Server-side checks cover TIN, Uganda country, registration, system mode, environment, credentials/transport metadata, product/UOM/tax/branch mappings. |
+| Durable queue/idempotency | PASS-CODE | Fiscal documents, events, attempts, unique internal/source keys, retry state, and snapshot payload are database-backed. |
+| Internal mock lifecycle | PASS-CODE | Accept/reject/transient outcomes are explicitly labelled INTERNAL MOCK — NOT URA; no official identifiers are fabricated. |
+| EFRIS deterministic foundation test | PASS | `node backend/test/efris.foundation.test.mjs` covered lifecycle guards, source uniqueness, and posted-tax-snapshot preservation. |
+| POS/return integration | PASS-CODE | Posted POS queueing and accepted-source return credit-note linkage use persisted tax snapshots; AR-from-POS duplicate fiscalisation is prevented by authority decision. |
+| Backend/frontend builds and route syntax | PENDING | Run after final route/UI validation. |
+| Authenticated browser acceptance | NOT RUN | Requires safe development session and verified mapping/configuration data. |

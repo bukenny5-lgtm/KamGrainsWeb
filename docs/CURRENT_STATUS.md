@@ -245,3 +245,7 @@ Rollback-contained POS/AR/AP VAT accounting acceptance passed on local developme
 ## Payment channels — 2026-09-24
 
 Payment channel foundation hardening is implemented in development only. Manual mode, scoped channel selection, provider-neutral payment transactions, lifecycle events, idempotency, reference uniqueness, and permissions are present. All existing channels remain safe unless an authorized user explicitly enables manual collection. No provider integration, live mode, deployment, or commit was performed. Exact MTN, Airtel, Card, Bank Transfer, Cash, Credit, duplicate-reference, inactive-channel, and branch/location browser acceptance remains required.
+
+## Phase 7 EFRIS — 2026-09-24
+
+EFRIS foundation is implemented and migration 40 is applied only to local development. EFRIS is independently disabled, readiness-gated, branch-scoped, mapping-driven, snapshot-based, and queue-backed. Real URA transport is not configured. Authenticated settings/mapping/POS/return/browser acceptance remains required; historical documents were not fiscalised.

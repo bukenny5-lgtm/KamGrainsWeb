@@ -520,6 +520,12 @@ Each error entry should include:
 - Existing API channel rows were inactive and lacked operational scope/mode fields; migration 39 adds them without changing historical rows or enabling live API operation.
 - Existing accounting uses payment method setup keys inside `sal.post_pos_sale`; this phase records channel/payment transaction audit data without changing journal semantics. Clearing-account settlement remains a forward accounting/reconciliation gap.
 - Manual MTN, Airtel, Card, and Bank Transfer browser acceptance remains required after an authorized user configures development channels.
+
+## 2026-09-24 — EFRIS onboarding boundary
+
+- No official URA technical specification, endpoint, credential, commodity code, UOM code, tax-category code, callback contract, or sandbox credential was present. Real transport is therefore deliberately `NOT_CONFIGURED`.
+- Fiscal documents are queued durably and retain snapshots; FDN, verification code, and QR fields remain null until a verified adapter response exists. Internal mock identifiers are explicitly not URA values.
+- EFRIS activation remains blocked by precheck failures and is independent of the generic tax-engine flag.
 ## 2026-09-24 — Phase 6C runtime boundary
 
 - The first local port-3000 process was stale and returned 404 for the newly mounted tax routes. Current source was separately verified on temporary local port 3011: health returned 200 and protected tax endpoints returned 401 unauthenticated. The configured development target remains port 3000; no production service was touched.

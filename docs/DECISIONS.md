@@ -294,3 +294,9 @@
 - `fin.api_payment_channel` remains the single channel register; no provider or checkout duplicate was created. Existing `BANK` values remain compatible with the target `BANK_TRANSFER` concept.
 - Manual payment transactions are confirmed only from an entered external reference and are recorded beside, not instead of, the existing POS journal boundary. Live/sandbox adapters are documented only.
 - Provider secrets are never entered into ordinary channel fields; credential columns are status/reference metadata only.
+
+## ADR-0023 — Uganda EFRIS as an adapter
+
+- EFRIS remains outside the generic ERP core and tax engine. The independent `efris` feature/configuration is disabled by default and activation requires a server-side readiness precheck.
+- POS is the fiscal authority for POS credit sales; generated AR invoices are not duplicated. Posted returns link to the original accepted fiscal document and queue a credit note using immutable return tax snapshots.
+- Without official URA technical documentation, only a durable queue, adapter contract, mapping/readiness model, and explicitly-labelled internal mock are implemented.

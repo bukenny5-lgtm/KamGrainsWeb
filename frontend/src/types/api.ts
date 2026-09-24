@@ -133,7 +133,8 @@ export type BusinessFeatureCode =
   | "pos"
   | "barcode"
   | "MULTI_LOCATION"
-  | "tax_engine";
+  | "tax_engine"
+  | "efris";
 
 export type BusinessFeatureDefinition = {
   feature_code: BusinessFeatureCode;

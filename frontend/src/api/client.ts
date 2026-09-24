@@ -115,6 +115,14 @@ export async function getBusinessFeatures(): Promise<BusinessFeaturesResponse> {
   return response.data;
 }
 
+export async function getEfrisSettings() { return (await api.get("/efris/settings")).data; }
+export async function getEfrisPrecheck() { return (await api.get("/efris/precheck")).data; }
+export async function updateEfrisSettings(payload: ApiPayload) { return (await api.patch("/efris/settings", payload)).data; }
+export async function getEfrisMappings() { return (await api.get("/efris/mappings")).data; }
+export async function getEfrisDocuments() { return (await api.get("/efris/documents")).data; }
+export async function saveEfrisMapping(kind: string, payload: ApiPayload) { return (await api.post(`/efris/mappings/${encode(kind)}`, payload)).data; }
+export async function internalMockEfrisSubmit(id: string, outcome: string = "ACCEPT") { return (await api.post(`/efris/documents/${encode(id)}/internal-mock-submit`, { outcome })).data; }
+
 export async function updateBusinessFeatures(payload: UpdateBusinessFeaturesPayload): Promise<BusinessFeaturesResponse> {
   const response = await api.patch("/business-features", payload);
   return response.data;

@@ -17,6 +17,7 @@ import {
   ReceiptText,
   Settings,
   ShoppingCart,
+  ShieldCheck,
   Truck,
   UserCircle,
   UserCog,
@@ -168,6 +169,12 @@ const navItems: NavItem[] = [
     icon: Cable,
     roles: roleList(ROLE_GROUPS.FINANCE_ACCESS),
     feature: "finance",
+  },
+  {
+    label: "EFRIS Compliance",
+    path: "/efris",
+    icon: ShieldCheck,
+    roles: roleList(ROLE_GROUPS.FINANCE_ACCESS),
   },
   {
     label: "Opening Balances",

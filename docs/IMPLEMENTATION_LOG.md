@@ -420,3 +420,11 @@ Added explicit Requesting Branch and Receiving Location controls to InternalStoc
 - Added normalized `app.payment_transaction` and immutable `app.payment_transaction_event` records with lifecycle statuses, provider-reference and idempotency uniqueness, and manual-confirmation audit fields.
 - POS Quick Sale now loads scoped active manual channels, auto-selects a sole eligible channel, captures an external reference, and records confirmed manual payment atomically with the existing POS posting function.
 - Added payment-channel permissions, available-channel API, transaction status endpoint, and management action to enable manual collection from the existing API Payment Channels page. No provider network calls or live credentials were added.
+
+## Phase 7 EFRIS foundation — 2026-09-24
+
+- Confirmed no existing EFRIS/URA adapter, fiscal queue, FDN/QR model, or official technical specification in the repository.
+- Added migration 40 with independent `efris` feature/configuration, readiness precheck, branch/place, product, UOM, and tax mappings, durable fiscal documents, events, and submission attempts.
+- Added a `NOT_CONFIGURED` adapter boundary; no URA HTTP/VPN/encryption/signature behavior or secrets were invented.
+- POS posted sales queue fiscal documents from persisted snapshots when EFRIS is enabled; POS credit remains the sole authority and customer returns can queue linked credit notes after an accepted original.
+- Added EFRIS settings, precheck, mappings, document monitor, retry, and clearly-labelled internal mock endpoints/UI.

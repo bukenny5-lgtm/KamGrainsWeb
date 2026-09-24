@@ -149,3 +149,7 @@ Tax account mapping, activation safety, POS/AR/AP tax posting boundaries, return
 ### Payment Channel Foundation — manual now, providers later
 
 Phase 39 reuses the existing API Payment Channels register and adds provider-neutral manual transaction auditability, scoped POS selection, lifecycle statuses, and adapter/callback readiness. MTN MoMo, Airtel Money, Card terminal, Bank collection, and gateway network integrations remain future work gated by provider contracts, credentials, sandbox certification, signature verification, settlement/reconciliation rules, and security review. Till sessions and EFRIS remain out of scope.
+
+### Phase 7 — Uganda EFRIS adapter foundation
+
+Migration 40 and the EFRIS Compliance page add independent configuration, readiness prechecks, verified mapping layers, durable fiscal documents/events/attempts, POS queueing, and return credit-note linkage. Real URA transport remains blocked pending official technical onboarding and is represented by `NOT_CONFIGURED`; internal mock behavior is never called URA sandbox.

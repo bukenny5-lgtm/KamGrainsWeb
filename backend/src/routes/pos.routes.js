@@ -6,6 +6,7 @@ import { getActiveCompanyId, resolveBusinessFeatureMap } from "../services/busin
 import { setDatabaseUserContext } from "../utils/uuid.js";
 import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
 import { calculateDocumentTotals, calculateTaxLine } from "../services/tax.service.js";
+import { queueEfrisPosSale } from "../services/efris.service.js";
 
 const router = express.Router();
 router.use(requireAuth,requireLocationAccessWhenSpecified);
@@ -603,6 +604,7 @@ router.post(
         await client.query(`UPDATE sal.ar_invoice_line al SET tax_code_id=pl.tax_code_id,tax_code=pl.tax_code,tax_treatment=pl.tax_treatment,tax_rate=pl.tax_rate,taxable_amount=pl.taxable_amount,tax_amount=pl.tax_amount,gross_amount=pl.gross_amount
           FROM sal.pos_sale ps JOIN sal.pos_sale_line pl ON pl.pos_sale_id=ps.pos_sale_id WHERE al.ar_invoice_id=ps.credit_ar_invoice_id AND al.product_id=pl.product_id AND ps.pos_sale_id=$1`, [saleId]);
       }
+      await queueEfrisPosSale(client, saleId, req.user?.user_id || null);
       await client.query("COMMIT");
       const sale = await loadSaleById(saleId);
       return res.status(201).json({ success: true, message: "POS sale completed.", sale, receipt: sale });

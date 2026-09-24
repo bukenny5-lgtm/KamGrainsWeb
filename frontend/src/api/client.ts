@@ -718,6 +718,11 @@ export async function updateApiPaymentChannel(
   return response.data;
 }
 
+export async function getAvailablePaymentChannels(params: ApiPayload) {
+  const response = await api.get("/api-payment-channels/available", { params });
+  return response.data;
+}
+
 export async function testApiPaymentChannelAction(
   channelId: string,
   payload: ApiPayload = {}

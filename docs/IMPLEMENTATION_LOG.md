@@ -413,3 +413,10 @@ Added explicit Requesting Branch and Receiving Location controls to InternalStoc
 - Ran rollback-contained development accounting acceptance using existing `NB-CLEAN` stock. Temporary product classification, tax enablement, POS sale, AR invoice, AP invoice, journals, and configuration were rolled back in one transaction.
 - Evidence: POS 4,000/720/4,720 with balanced 7,220/7,220 journal; AR 4,000/720/4,720 balanced; AP 4,000/720/4,720 balanced. No temporary test rows remain.
 - Unauthenticated tax API protection passed. Authenticated CREDIT POS, returns/refunds, branch A/B, and browser checks remain unavailable without a safe development session.
+
+## Phase 39 Payment Channel Foundation — 2026-09-24
+
+- Reused `fin.api_payment_channel`; added manual/sandbox/live mode metadata, explicit active/manual collection state, provider identifiers, masked account/terminal metadata, credential readiness, branch/location scope, and first-class CARD/BANK_TRANSFER compatibility.
+- Added normalized `app.payment_transaction` and immutable `app.payment_transaction_event` records with lifecycle statuses, provider-reference and idempotency uniqueness, and manual-confirmation audit fields.
+- POS Quick Sale now loads scoped active manual channels, auto-selects a sole eligible channel, captures an external reference, and records confirmed manual payment atomically with the existing POS posting function.
+- Added payment-channel permissions, available-channel API, transaction status endpoint, and management action to enable manual collection from the existing API Payment Channels page. No provider network calls or live credentials were added.

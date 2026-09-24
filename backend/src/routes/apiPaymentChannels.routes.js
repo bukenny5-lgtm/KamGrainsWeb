@@ -59,6 +59,19 @@ router.get("/", requireAuth, async (req, res) => {
         gl_account_name,
         account_number_masked,
         wallet_number_masked,
+        currency_code,
+        mode,
+        branch_id,
+        location_id,
+        merchant_code,
+        merchant_name,
+        terminal_id,
+        terminal_name,
+        bank_name,
+        account_name,
+        credential_status,
+        credentials_configured,
+        credentials_last_verified_at,
         api_enabled,
         collection_enabled,
         disbursement_enabled,
@@ -100,6 +113,78 @@ router.get("/", requireAuth, async (req, res) => {
       500
     );
   }
+});
+
+function channelTypesForPaymentMethod(method) {
+  if (method === "MOBILE_MONEY") return ["MTN_MOMO", "AIRTEL_MONEY"];
+  if (method === "CARD") return ["CARD"];
+  if (method === "BANK_TRANSFER") return ["BANK_TRANSFER", "BANK"];
+  if (method === "CASH") return ["CASH"];
+  return [];
+}
+
+function channelScopeSql() {
+  return `
+    c.status = 'ACTIVE'
+    AND c.collection_enabled = true
+    AND c.mode = 'MANUAL'
+    AND ($2::uuid IS NULL OR c.branch_id IS NULL OR c.branch_id = $2::uuid)
+    AND ($3::uuid IS NULL OR c.location_id IS NULL OR c.location_id = $3::uuid)`;
+}
+
+/** GET /api/api-payment-channels/available?payment_method=MOBILE_MONEY&branch_id=...&location_id=... */
+router.get("/available", requireAuth, async (req, res) => {
+  try {
+    const method = String(req.query.payment_method || "").trim().toUpperCase();
+    const types = channelTypesForPaymentMethod(method);
+    if (!types.length) return res.status(400).json({ success: false, message: "A supported payment_method is required." });
+    const result = await query(`
+      SELECT c.api_payment_channel_id, c.channel_code, c.channel_name, c.channel_type,
+             c.provider_name, c.currency_code, c.mode, c.merchant_code, c.merchant_name,
+             c.account_number_masked, c.wallet_number_masked, c.bank_name, c.account_name,
+             c.terminal_id, c.terminal_name, c.branch_id, c.location_id,
+             c.linked_payment_account_id, c.linked_gl_account_id
+      FROM fin.api_payment_channel c
+      WHERE c.channel_type = ANY($1::text[])
+        AND ${channelScopeSql()}
+      ORDER BY c.channel_name;`, [types, req.query.branch_id || null, req.query.location_id || null]);
+    return res.json({ success: true, count: result.rowCount, data: result.rows });
+  } catch (error) {
+    return sendApiChannelError(res, error, "Failed to load available payment channels.", 500);
+  }
+});
+
+/** GET /api/api-payment-channels/transactions/:transactionId */
+router.get("/transactions/:transactionId", requireAuth, async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT pt.*, c.channel_code, c.channel_name, c.channel_type, c.provider_name
+      FROM app.payment_transaction pt
+      JOIN fin.api_payment_channel c ON c.api_payment_channel_id = pt.channel_id
+      WHERE pt.payment_transaction_id = $1;`, [req.params.transactionId]);
+    if (!result.rowCount) return res.status(404).json({ success: false, message: "Payment transaction not found." });
+    return res.json({ success: true, data: result.rows[0] });
+  } catch (error) { return sendApiChannelError(res, error, "Failed to load payment transaction.", 500); }
+});
+
+/** PATCH /api/api-payment-channels/transactions/:transactionId/status */
+router.patch("/transactions/:transactionId/status", requireAuth, requirePermission("CONFIRM_MANUAL_PAYMENT"), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const nextStatus = String(req.body?.status || "").trim().toUpperCase();
+    if (!["CONFIRMED", "FAILED", "CANCELLED", "REVERSED", "PENDING"].includes(nextStatus)) return res.status(400).json({ success: false, message: "Invalid payment transaction status." });
+    await client.query("BEGIN");
+    const current = await client.query("SELECT * FROM app.payment_transaction WHERE payment_transaction_id=$1 FOR UPDATE", [req.params.transactionId]);
+    if (!current.rowCount) { await client.query("ROLLBACK"); return res.status(404).json({ success: false, message: "Payment transaction not found." }); }
+    const oldStatus = current.rows[0].status;
+    const allowed = { INITIATED: ["PENDING", "CONFIRMED", "FAILED", "CANCELLED"], PENDING: ["CONFIRMED", "FAILED", "CANCELLED"], CONFIRMED: ["REVERSED"], FAILED: [], CANCELLED: [], REVERSED: [] };
+    if (!allowed[oldStatus]?.includes(nextStatus)) { await client.query("ROLLBACK"); return res.status(409).json({ success: false, message: `Invalid payment status transition ${oldStatus} -> ${nextStatus}.` }); }
+    const result = await client.query(`UPDATE app.payment_transaction SET status=$2, confirmed_by=CASE WHEN $2='CONFIRMED' THEN $3 ELSE confirmed_by END, confirmed_at=CASE WHEN $2='CONFIRMED' THEN now() ELSE confirmed_at END, updated_at=now() WHERE payment_transaction_id=$1 RETURNING *`, [req.params.transactionId, nextStatus, req.user?.user_id || null]);
+    await client.query("INSERT INTO app.payment_transaction_event(payment_transaction_id,old_status,new_status,event_type,actor_user_id) VALUES($1,$2,$3,'STATUS_CHANGE',$4)", [req.params.transactionId, oldStatus, nextStatus, req.user?.user_id || null]);
+    await client.query("COMMIT");
+    return res.json({ success: true, data: result.rows[0] });
+  } catch (error) { await client.query("ROLLBACK").catch(() => {}); return sendApiChannelError(res, error, "Failed to update payment transaction status.", 400); }
+  finally { client.release(); }
 });
 
 /**
@@ -215,7 +300,7 @@ router.get("/:channelId", requireAuth, async (req, res) => {
 router.post(
   "/",
   requireAuth,
-  requirePermission("CREATE_SETUP"),
+  requirePermission("MANAGE_PAYMENT_CHANNELS"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -231,6 +316,19 @@ router.post(
         wallet_number_masked = null,
         collection_enabled = false,
         disbursement_enabled = false,
+        currency_code = "UGX",
+        mode = "MANUAL",
+        branch_id = null,
+        location_id = null,
+        merchant_code = null,
+        merchant_name = null,
+        terminal_id = null,
+        terminal_name = null,
+        bank_name = null,
+        account_name = null,
+        credential_status = "NOT_CONFIGURED",
+        credentials_configured = false,
+        credentials_last_verified_at = null,
         base_url = null,
         webhook_url = null,
         public_key_ref = null,
@@ -279,6 +377,8 @@ router.post(
           "MTN_MOMO",
           "AIRTEL_MONEY",
           "PAYMENT_GATEWAY",
+          "CARD",
+          "BANK_TRANSFER",
         ].includes(normalizedChannelType)
       ) {
         return res.status(400).json({
@@ -288,11 +388,11 @@ router.post(
         });
       }
 
-      if (!["INACTIVE", "SUSPENDED", "TESTING"].includes(normalizedStatus)) {
+      if (!["INACTIVE", "ACTIVE", "SUSPENDED", "TESTING", "API_ENABLED"].includes(normalizedStatus)) {
         return res.status(400).json({
           success: false,
           message:
-            "Version 1 only allows INACTIVE, SUSPENDED, or TESTING status. ACTIVE is reserved for Version 2.",
+            "status must be INACTIVE, ACTIVE, TESTING, SUSPENDED, or API_ENABLED.",
         });
       }
 
@@ -352,6 +452,19 @@ router.post(
           linked_gl_account_id,
           account_number_masked,
           wallet_number_masked,
+          currency_code,
+          mode,
+          branch_id,
+          location_id,
+          merchant_code,
+          merchant_name,
+          terminal_id,
+          terminal_name,
+          bank_name,
+          account_name,
+          credential_status,
+          credentials_configured,
+          credentials_last_verified_at,
           api_enabled,
           collection_enabled,
           disbursement_enabled,
@@ -376,7 +489,6 @@ router.post(
           $6,
           $7,
           $8,
-          false,
           $9,
           $10,
           $11,
@@ -387,6 +499,22 @@ router.post(
           $16,
           $17,
           $18,
+          $19,
+          $20,
+          $21,
+          false,
+          $22,
+          $23,
+          $24,
+          $25,
+          $26,
+          $27,
+          $28,
+          $29,
+          $30,
+          $31,
+          $32,
+          $33,
           now(),
           now()
         )
@@ -401,6 +529,19 @@ router.post(
           linked_gl_account_id || null,
           account_number_masked || null,
           wallet_number_masked || null,
+          String(currency_code || "UGX").trim().toUpperCase(),
+          String(mode || "MANUAL").trim().toUpperCase(),
+          branch_id || null,
+          location_id || null,
+          merchant_code || null,
+          merchant_name || null,
+          terminal_id || null,
+          terminal_name || null,
+          bank_name || null,
+          account_name || null,
+          String(credential_status || "NOT_CONFIGURED").trim().toUpperCase(),
+          Boolean(credentials_configured),
+          credentials_last_verified_at || null,
           Boolean(collection_enabled),
           Boolean(disbursement_enabled),
           base_url || null,
@@ -445,7 +586,7 @@ router.post(
 router.patch(
   "/:channelId",
   requireAuth,
-  requirePermission("CREATE_SETUP"),
+  requirePermission("MANAGE_PAYMENT_CHANNELS"),
   async (req, res) => {
     const client = await pool.connect();
 
@@ -460,6 +601,19 @@ router.patch(
         linked_gl_account_id,
         account_number_masked,
         wallet_number_masked,
+        currency_code,
+        mode,
+        branch_id,
+        location_id,
+        merchant_code,
+        merchant_name,
+        terminal_id,
+        terminal_name,
+        bank_name,
+        account_name,
+        credential_status,
+        credentials_configured,
+        credentials_last_verified_at,
         collection_enabled,
         disbursement_enabled,
         base_url,
@@ -510,6 +664,8 @@ router.patch(
           "MTN_MOMO",
           "AIRTEL_MONEY",
           "PAYMENT_GATEWAY",
+          "CARD",
+          "BANK_TRANSFER",
         ].includes(normalizedChannelType)
       ) {
         await client.query("ROLLBACK");
@@ -523,14 +679,14 @@ router.patch(
 
       if (
         normalizedStatus &&
-        !["INACTIVE", "SUSPENDED", "TESTING"].includes(normalizedStatus)
+        !["INACTIVE", "ACTIVE", "SUSPENDED", "TESTING", "API_ENABLED"].includes(normalizedStatus)
       ) {
         await client.query("ROLLBACK");
 
         return res.status(400).json({
           success: false,
           message:
-            "Version 1 only allows INACTIVE, SUSPENDED, or TESTING status. ACTIVE is reserved for Version 2.",
+            "status must be INACTIVE, ACTIVE, TESTING, SUSPENDED, or API_ENABLED.",
         });
       }
 
@@ -585,16 +741,29 @@ router.patch(
           linked_gl_account_id = $6,
           account_number_masked = $7,
           wallet_number_masked = $8,
+          currency_code = COALESCE($9, currency_code),
+          mode = COALESCE($10, mode),
+          branch_id = $11,
+          location_id = $12,
+          merchant_code = $13,
+          merchant_name = $14,
+          terminal_id = $15,
+          terminal_name = $16,
+          bank_name = $17,
+          account_name = $18,
+          credential_status = COALESCE($19, credential_status),
+          credentials_configured = COALESCE($20, credentials_configured),
+          credentials_last_verified_at = $21,
           api_enabled = false,
-          collection_enabled = COALESCE($9, collection_enabled),
-          disbursement_enabled = COALESCE($10, disbursement_enabled),
-          base_url = $11,
-          webhook_url = $12,
-          public_key_ref = $13,
-          secret_key_ref = $14,
-          api_key_ref = $15,
-          status = COALESCE($16, status),
-          notes = $17,
+          collection_enabled = COALESCE($22, collection_enabled),
+          disbursement_enabled = COALESCE($23, disbursement_enabled),
+          base_url = $24,
+          webhook_url = $25,
+          public_key_ref = $26,
+          secret_key_ref = $27,
+          api_key_ref = $28,
+          status = COALESCE($29, status),
+          notes = $30,
           updated_at = now()
         WHERE api_payment_channel_id = $1
         RETURNING *;
@@ -608,6 +777,19 @@ router.patch(
           linked_gl_account_id || null,
           account_number_masked ?? null,
           wallet_number_masked ?? null,
+          currency_code ?? null,
+          mode === undefined || mode === null ? null : String(mode).trim().toUpperCase(),
+          branch_id ?? null,
+          location_id ?? null,
+          merchant_code ?? null,
+          merchant_name ?? null,
+          terminal_id ?? null,
+          terminal_name ?? null,
+          bank_name ?? null,
+          account_name ?? null,
+          credential_status === undefined || credential_status === null ? null : String(credential_status).trim().toUpperCase(),
+          credentials_configured === undefined || credentials_configured === null ? null : Boolean(credentials_configured),
+          credentials_last_verified_at ?? null,
           collection_enabled === undefined || collection_enabled === null
             ? null
             : Boolean(collection_enabled),
@@ -655,7 +837,7 @@ router.patch(
 router.post(
   "/:channelId/test-action",
   requireAuth,
-  requirePermission("CREATE_SETUP"),
+  requirePermission("MANAGE_PAYMENT_CHANNELS"),
   async (req, res) => {
     try {
       const { channelId } = req.params;

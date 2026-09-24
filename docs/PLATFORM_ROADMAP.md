@@ -145,3 +145,7 @@ Forward schema/API/calculation foundation is present; activation is intentionall
 ### Phase 6B — VAT accounting and universality hardening
 
 Tax account mapping, activation safety, POS/AR/AP tax posting boundaries, return snapshots, and generic-rate validation are implemented. Enablement remains gated on product classification and authenticated/manual acceptance. EFRIS remains a separate Phase 7 adapter.
+
+### Payment Channel Foundation — manual now, providers later
+
+Phase 39 reuses the existing API Payment Channels register and adds provider-neutral manual transaction auditability, scoped POS selection, lifecycle statuses, and adapter/callback readiness. MTN MoMo, Airtel Money, Card terminal, Bank collection, and gateway network integrations remain future work gated by provider contracts, credentials, sandbox certification, signature verification, settlement/reconciliation rules, and security review. Till sessions and EFRIS remain out of scope.

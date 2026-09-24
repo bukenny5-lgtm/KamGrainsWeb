@@ -811,3 +811,16 @@ Reverse Head Office request, reverse authorization, stock before/after, transit 
 | VAT disabled restoration | PASS | After rollback: tax engine false, feature false, VAT false, no temporary posted test sales. |
 | Generic/mixed/inclusive/exclusive formulas | PASS | 7 deterministic service tests pass, including configured 10% rate. |
 | Authenticated cash/credit/return/branch/browser matrix | NOT RUN | No safe authenticated development credentials/session was available. No credentials were created. |
+
+## Phase 39 Payment Channel Foundation — 2026-09-24
+
+| Check | Result | Evidence |
+|---|---|---|
+| Migration 39 | PASS | Applied idempotently to local development `kam_grains_db`; existing channel rows remain inactive and no provider calls were made. |
+| Existing architecture inspection | PASS | `fin.api_payment_channel`, `fin.payment_account_control`, existing queue/webhook tables, and `sal.post_pos_sale` confirmed as authoritative structures. |
+| Backend route syntax | PASS | `node --check` passed for API payment channel and POS routes. |
+| Frontend TypeScript | PASS | `npx.cmd tsc -b --pretty false` passed after channel UI/client changes. |
+| Deterministic transaction constraints | PASS-CODE | Lifecycle transition guard, idempotency unique index, and per-channel provider-reference unique index are implemented. |
+| Payment foundation deterministic test | PASS | `node backend/test/payment-channel.foundation.test.mjs` covered allowed/invalid status transitions, duplicate-reference detection, active/manual eligibility, and branch restriction behavior. |
+| Manual MTN/Airtel/Card/Bank/Cash/Credit browser acceptance | PENDING | Requires an authorized browser session and explicitly configured active manual development channels. |
+| Provider API/sandbox/live | NOT RUN | Deliberately out of scope; no credentials, network calls, callbacks, or live mode. |

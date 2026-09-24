@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   Cable,
@@ -12,7 +12,7 @@ import {
   XCircle,
 } from "lucide-react";
 
-import { getApiPaymentChannels } from "@/api/client";
+import { getApiPaymentChannels, updateApiPaymentChannel } from "@/api/client";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -93,6 +93,10 @@ function getStatusBadge(row: AnyRecord) {
     );
   }
 
+  if (status === "ACTIVE") {
+    return <Badge className="gap-1"><CheckCircle2 className="h-3 w-3" />Active Manual</Badge>;
+  }
+
   if (status === "TESTING") {
     return (
       <Badge variant="secondary" className="gap-1">
@@ -112,6 +116,11 @@ function getStatusBadge(row: AnyRecord) {
 
 export default function ApiPaymentChannels() {
   const [search, setSearch] = useState("");
+  const queryClient = useQueryClient();
+  const manualEnable = useMutation({
+    mutationFn: (row: AnyRecord) => updateApiPaymentChannel(row.api_payment_channel_id, { mode: "MANUAL", status: "ACTIVE", collection_enabled: true }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["api-payment-channels"] }),
+  });
 
   const channelsQuery = useQuery({
     queryKey: ["api-payment-channels"],
@@ -272,6 +281,7 @@ export default function ApiPaymentChannels() {
                   <TableHead>Channel</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Provider</TableHead>
+                  <TableHead>Mode</TableHead>
                   <TableHead>Payment Account</TableHead>
                   <TableHead>GL Account</TableHead>
                   <TableHead>Account / Wallet</TableHead>
@@ -282,13 +292,14 @@ export default function ApiPaymentChannels() {
                   <TableHead>Status</TableHead>
                   <TableHead>Webhook URL</TableHead>
                   <TableHead>Created At</TableHead>
+                  <TableHead>Action</TableHead>
                 </TableRow>
               </TableHeader>
 
               <TableBody>
                 {filteredChannels.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={13} className="h-24 text-center">
+                    <TableCell colSpan={15} className="h-24 text-center">
                       No API payment channels found.
                     </TableCell>
                   </TableRow>
@@ -309,6 +320,7 @@ export default function ApiPaymentChannels() {
                         <Badge variant="outline">{safeText(row.channel_type)}</Badge>
                       </TableCell>
                       <TableCell>{safeText(row.provider_name)}</TableCell>
+                      <TableCell><Badge variant="outline">{safeText(row.mode || "MANUAL")}</Badge></TableCell>
                       <TableCell>
                         {safeText(
                           row.payment_account_name || row.payment_account_code
@@ -333,6 +345,7 @@ export default function ApiPaymentChannels() {
                         {safeText(row.webhook_url)}
                       </TableCell>
                       <TableCell>{formatDateTime(row.created_at)}</TableCell>
+                      <TableCell><Button size="sm" variant="outline" disabled={manualEnable.isPending || String(row.status).toUpperCase() === "ACTIVE"} onClick={() => manualEnable.mutate(row)}>Enable Manual</Button></TableCell>
                     </TableRow>
                   ))
                 )}

@@ -137,10 +137,10 @@ router.post(
 
       const normalizedChannelType = String(channel_type).trim().toUpperCase();
 
-      if (!["CASH", "BANK", "MOBILE_MONEY"].includes(normalizedChannelType)) {
+      if (!["CASH", "BANK", "MOBILE_MONEY", "CARD", "BANK_TRANSFER"].includes(normalizedChannelType)) {
         return res.status(400).json({
           success: false,
-          message: "channel_type must be CASH, BANK, or MOBILE_MONEY.",
+          message: "channel_type must be CASH, BANK, MOBILE_MONEY, CARD, or BANK_TRANSFER.",
         });
       }
 
@@ -318,11 +318,11 @@ router.patch(
 
       if (
         normalizedChannelType &&
-        !["CASH", "BANK", "MOBILE_MONEY"].includes(normalizedChannelType)
+        !["CASH", "BANK", "MOBILE_MONEY", "CARD", "BANK_TRANSFER"].includes(normalizedChannelType)
       ) {
         return res.status(400).json({
           success: false,
-          message: "channel_type must be CASH, BANK, or MOBILE_MONEY.",
+          message: "channel_type must be CASH, BANK, MOBILE_MONEY, CARD, or BANK_TRANSFER.",
         });
       }
 

@@ -514,6 +514,12 @@ Each error entry should include:
 - Tax-aware POS/AR/AP paths now require configured VAT control accounts and effective product tax codes when the tax engine is enabled. Existing VAT-disabled behavior remains available.
 - Delivery and GRN remain logistics/inventory events; tax authority is the POS sale or AR/AP invoice posting event. Refund settlement remains a liability settlement and does not reverse tax a second time.
 - Full authenticated mixed-basket, branch A/B, AP recoverability, and browser acceptance remain pending because no authenticated browser session was available in this run.
+
+## 2026-09-24 — Payment channel boundary
+
+- Existing API channel rows were inactive and lacked operational scope/mode fields; migration 39 adds them without changing historical rows or enabling live API operation.
+- Existing accounting uses payment method setup keys inside `sal.post_pos_sale`; this phase records channel/payment transaction audit data without changing journal semantics. Clearing-account settlement remains a forward accounting/reconciliation gap.
+- Manual MTN, Airtel, Card, and Bank Transfer browser acceptance remains required after an authorized user configures development channels.
 ## 2026-09-24 — Phase 6C runtime boundary
 
 - The first local port-3000 process was stale and returned 404 for the newly mounted tax routes. Current source was separately verified on temporary local port 3011: health returned 200 and protected tax endpoints returned 401 unauthenticated. The configured development target remains port 3000; no production service was touched.

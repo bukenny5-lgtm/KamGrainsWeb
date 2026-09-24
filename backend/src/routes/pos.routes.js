@@ -45,6 +45,14 @@ function normalizePaymentMethod(value) {
   return method;
 }
 
+function paymentChannelTypes(method) {
+  if (method === "MOBILE_MONEY") return ["MTN_MOMO", "AIRTEL_MONEY"];
+  if (method === "CARD") return ["CARD"];
+  if (method === "BANK_TRANSFER") return ["BANK_TRANSFER", "BANK"];
+  if (method === "CASH") return ["CASH"];
+  return [];
+}
+
 function hasAction(req, action) {
   const roles = getUserRoles(req);
   return (ACTION_ROLES[action] || []).some((role) => roles.includes(role));
@@ -102,6 +110,16 @@ async function loadSaleById(saleId) {
       ps.posted_journal_id,
       ps.reversal_movement_id,
       ps.reversal_journal_id,
+      (SELECT row_to_json(pt) FROM (
+        SELECT pt.payment_transaction_id, pt.channel_id, c.channel_code, c.channel_name,
+               c.channel_type, c.provider_name, pt.provider_reference, pt.amount,
+               pt.currency_code, pt.status, pt.confirmation_mode, pt.confirmed_by,
+               pt.confirmed_at
+        FROM app.payment_transaction pt
+        JOIN fin.api_payment_channel c ON c.api_payment_channel_id = pt.channel_id
+        WHERE pt.document_type='POS_SALE' AND pt.document_id=ps.pos_sale_id
+        ORDER BY pt.created_at DESC LIMIT 1
+      ) pt) AS payment_transaction,
       ps.created_at,
       ps.created_by,
       u.full_name AS cashier_name,
@@ -389,6 +407,7 @@ router.post(
     const saleOverrideReason = String(body.price_override_reason || "").trim();
     const method = normalizePaymentMethod(body.payment_method);
     const idempotencyKey = String(body.idempotency_key || "").trim();
+    const externalReference = String(body.payment_reference || body.external_reference || "").trim();
 
     if (!lines.length) return res.status(400).json({ success: false, message: "At least one POS line is required." });
     if (!idempotencyKey) return res.status(400).json({ success: false, message: "idempotency_key is required." });
@@ -415,6 +434,29 @@ router.post(
       if (!locationId) {
         await client.query("ROLLBACK");
         return res.status(409).json({ success: false, message: "An active POS location is required." });
+      }
+
+      let paymentChannel = null;
+      const channelTypes = paymentChannelTypes(method);
+      if (channelTypes.length && method !== "CREDIT") {
+        const candidates = await client.query(`
+          SELECT c.* FROM fin.api_payment_channel c
+          WHERE c.api_payment_channel_id = COALESCE($1::uuid, c.api_payment_channel_id)
+            AND c.channel_type = ANY($2::text[])
+            AND c.status = 'ACTIVE' AND c.collection_enabled = true AND c.mode = 'MANUAL'
+            AND (c.branch_id IS NULL OR c.branch_id = $3)
+            AND (c.location_id IS NULL OR c.location_id = $4)
+          ORDER BY c.channel_name;`, [body.payment_channel_id || null, channelTypes, req.branchId, locationId]);
+        if (body.payment_channel_id && !candidates.rowCount) {
+          await client.query("ROLLBACK");
+          return res.status(403).json({ success: false, message: "Selected payment channel is inactive, not enabled for collection, or outside this branch/location." });
+        }
+        if (candidates.rowCount === 1) paymentChannel = candidates.rows[0];
+        if (candidates.rowCount > 1 && body.payment_channel_id) paymentChannel = candidates.rows[0];
+        if (paymentChannel && method !== "CASH" && !externalReference) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ success: false, message: "A manual external payment reference is required." });
+        }
       }
 
       const customerId = body.customer_id || null;
@@ -511,10 +553,29 @@ router.post(
           idempotency_key, created_by, due_date
         )
         VALUES (sal.next_pos_sale_no(), current_date, $1, $2, $3, $4, $5, $6, $6, $10, $11, now(), 'DRAFT', $7, $8, $9)
-        RETURNING pos_sale_id;`,
+        RETURNING pos_sale_id, sale_no;`,
         [locationId, customerId, method, tendered, method === "CASH" ? Number((tendered - subtotal).toFixed(2)) : 0, subtotal, idempotencyKey, req.user?.user_id || null, method === "CREDIT" ? (body.due_date || null) : null, taxTotals.taxableAmount, taxTotals.taxAmount]
       );
       const saleId = saleResult.rows[0].pos_sale_id;
+      if (paymentChannel) {
+        const transaction = await client.query(`
+          INSERT INTO app.payment_transaction(
+            company_id, branch_id, location_id, channel_id, document_type, document_id,
+            internal_reference, provider_reference, amount, currency_code, status,
+            confirmation_mode, initiated_by, confirmed_by, confirmed_at, idempotency_key
+          )
+          SELECT cp.company_id, $2, $3, $4, 'POS_SALE', $5, $6, $7, $8,
+                 COALESCE(NULLIF($9, ''), cp.currency_code, 'UGX'), 'CONFIRMED', 'MANUAL',
+                 $10, $10, now(), $11
+          FROM app.company_profile cp WHERE cp.is_active
+          ORDER BY cp.created_at, cp.company_id LIMIT 1
+          RETURNING *;`, [
+            null, req.branchId, locationId, paymentChannel.api_payment_channel_id, saleId,
+            saleResult.rows[0].sale_no, externalReference || null, subtotal,
+            paymentChannel.currency_code || "UGX", req.user?.user_id || null, `${idempotencyKey}:payment`
+          ]);
+        await client.query("INSERT INTO app.payment_transaction_event(payment_transaction_id,new_status,event_type,actor_user_id,event_metadata) VALUES($1,'CONFIRMED','MANUAL_CONFIRMATION',$2,$3)", [transaction.rows[0].payment_transaction_id, req.user?.user_id || null, JSON.stringify({ provider_reference: externalReference || null })]);
+      }
       for (const line of lines) {
         const product = productMap.get(line.product_id);
         const qty = Number(line.qty);

@@ -508,6 +508,8 @@ export default function PaymentAccounts() {
                       <SelectItem value="CASH">CASH</SelectItem>
                       <SelectItem value="BANK">BANK</SelectItem>
                       <SelectItem value="MOBILE_MONEY">MOBILE MONEY</SelectItem>
+                      <SelectItem value="CARD">CARD</SelectItem>
+                      <SelectItem value="BANK_TRANSFER">BANK TRANSFER</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

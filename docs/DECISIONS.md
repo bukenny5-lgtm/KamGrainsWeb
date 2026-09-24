@@ -288,3 +288,9 @@
 
 - Tax treatment changes remain local drafts until an explicit Save Tax request succeeds; dependent product/POS/precheck queries are then refreshed.
 - POS quantities preserve intermediate text while typing and validate on commit. Checkout presentation may improve, but POS accounting, inventory, lot/cost, branch/location, and tax snapshot authority remain unchanged.
+
+## ADR-0022 — Reuse API payment channels for manual POS
+
+- `fin.api_payment_channel` remains the single channel register; no provider or checkout duplicate was created. Existing `BANK` values remain compatible with the target `BANK_TRANSFER` concept.
+- Manual payment transactions are confirmed only from an entered external reference and are recorded beside, not instead of, the existing POS journal boundary. Live/sandbox adapters are documented only.
+- Provider secrets are never entered into ordinary channel fields; credential columns are status/reference metadata only.

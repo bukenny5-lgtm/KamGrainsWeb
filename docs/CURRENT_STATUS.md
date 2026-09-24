@@ -241,3 +241,7 @@ Migration 38 overlap enforcement was also applied and verified on the local deve
 Phase 6D corrects tax-save UX by requiring explicit Save Tax confirmation and refreshing dependent React Query data. Quick Sale quantity editing now supports fractional keyboard entry, cart-line tax indicators, and an ordered checkout summary/payment flow. Existing POS accounting, inventory, lot/cost, branch/location, and tax snapshot behavior remains unchanged. Manual authenticated browser acceptance is still required.
 
 Rollback-contained POS/AR/AP VAT accounting acceptance passed on local development data. All temporary configuration and transactions were rolled back. Activation remains blocked by 7 unclassified active saleable and 11 unclassified active purchasable products. VAT and the tax feature are disabled. Authenticated CREDIT POS, returns/refunds, branch A/B, and manual browser acceptance remain pending.
+
+## Payment channels — 2026-09-24
+
+Payment channel foundation hardening is implemented in development only. Manual mode, scoped channel selection, provider-neutral payment transactions, lifecycle events, idempotency, reference uniqueness, and permissions are present. All existing channels remain safe unless an authorized user explicitly enables manual collection. No provider integration, live mode, deployment, or commit was performed. Exact MTN, Airtel, Card, Bank Transfer, Cash, Credit, duplicate-reference, inactive-channel, and branch/location browser acceptance remains required.

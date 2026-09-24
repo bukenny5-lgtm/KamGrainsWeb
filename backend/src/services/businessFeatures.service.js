@@ -10,6 +10,7 @@ export const KAM_FEATURE_FALLBACK = {
   pos: false,
   barcode: false,
   MULTI_LOCATION: false,
+  tax_engine: false,
 };
 
 export async function getActiveCompanyId() {

@@ -375,3 +375,41 @@ Updated InterSiteTransfers.tsx with a shared three-decimal quantity formatter, U
 ## Phase 5 Request Direction UI Fix — 2026-09-23
 
 Added explicit Requesting Branch and Receiving Location controls to InternalStockRequests.tsx. Requesting branches use the authorized branch list; locations are reloaded by selected branch and stale location state is cleared. Creation now sends the selected branch/location rather than only the current operating context. Request history/detail APIs now return receiving location and actor display fields, and the UI shows requesting branch, receiving location and preferred source.
+## 2026-09-24 — Phase 6 Configurable VAT / Tax Engine foundation
+
+- Added forward-only `database/migrations/phase_34_tax_engine.sql`; applied only to the documented local development database `kam_grains_db`. Production was not touched, and no deployment or commit was performed.
+- Added effective-dated company tax codes, Uganda seed treatments, disabled-by-default `tax_engine` feature, company tax settings, nullable product tax classification, and additive POS/AR/AP snapshot columns.
+- Added tax configuration/report endpoints, role mappings, product API tax fields, exact decimal calculation utilities, and deterministic tax formula tests.
+- Full tax-aware journal replacement, returns VAT reversal, document UI totals, and authenticated browser acceptance remain pending because legacy posting functions are the authoritative accounting boundary.
+## 2026-09-24 — Phase 6B VAT accounting and universality hardening
+
+- Audited hardcoded assumptions: Uganda/KAM values remain seed data, fallback branding, documentation, or existing platform identity; no tax calculation uses a company name, UUID, branch, product, or fixed 18% constant.
+- Added forward migrations 35–37 for configured Input/Output VAT accounts, activation precheck, tax-aware AR/AP posting, and immutable original tax snapshots on customer returns.
+- Integrated POS tax snapshots and Output VAT journal adjustment in the existing POS authoritative posting boundary. Credit POS-generated AR invoices reuse the POS journal and do not repost revenue/VAT.
+- Added Setup VAT settings display, activation precheck API, generic 10% tests, mixed-tax/disabled tests, and documented the single-company extension point and EFRIS boundary.
+## 2026-09-24 — Phase 6C automated runtime acceptance
+
+- Confirmed local `kam_grains_db`, migrations 34–37, VAT accounts, activation blockers, and disabled final state.
+
+## Phase 6C UI correction — 2026-09-24
+
+- Confirmed the existing classification control was in Setup → Business Features, not in the visible product master table or Quick Sale.
+- Added activation-readiness messaging with actionable precheck blockers and preserved server-side precheck enforcement.
+- Added current/effective tax-code validation to product create/update APIs.
+- Exposed tax metadata in POS products and price administration API results; Quick Sale now shows Taxable Value, VAT, and Total when enabled.
+- PHASE5-AB-TEST remains deliberately unchanged and requires manual classification through the normal UI before acceptance.
+
+## Phase 6C final VAT configuration UX — 2026-09-24
+
+- Added Tax Treatment to Selling Price Management as a dynamic approved-tax-code selector. It writes only `inv.product.tax_code_id` through `PATCH /api/products/:productId/tax-code`; price rows and price history are not used for tax ownership.
+- Added administrator-only Tax Rate Management for new effective-dated periods, closing periods, and activation/deactivation. Backend validates bounds, dates, company scope, and overlaps; migration 38 adds a database exclusion constraint for active-period overlap prevention.
+- Updated POS, product, and AR/AP effective-date resolution so a product tax-code reference automatically uses the applicable current/future rate row by code and date.
+
+## Phase 6D VAT persistence and Quick Sale UX — 2026-09-24
+
+- Replaced the Selling Price tax selector's immediate mutation with explicit row-local draft state and Save Tax confirmation. Successful saves refresh setup products, product classification, POS catalogue, and activation readiness queries.
+- Quick Sale quantity inputs now use editable text state while typing, commit on blur/Enter, normalize to three decimals, and validate positive quantity and available stock.
+- Quick Sale cart lines show compact tax treatment indicators; checkout now presents customer, tax summary, payment, tender/change, and completion in that order while preserving existing payment methods and posting authority.
+- Ran rollback-contained development accounting acceptance using existing `NB-CLEAN` stock. Temporary product classification, tax enablement, POS sale, AR invoice, AP invoice, journals, and configuration were rolled back in one transaction.
+- Evidence: POS 4,000/720/4,720 with balanced 7,220/7,220 journal; AR 4,000/720/4,720 balanced; AP 4,000/720/4,720 balanced. No temporary test rows remain.
+- Unauthenticated tax API protection passed. Authenticated CREDIT POS, returns/refunds, branch A/B, and browser checks remain unavailable without a safe development session.

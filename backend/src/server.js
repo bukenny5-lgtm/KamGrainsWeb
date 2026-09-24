@@ -47,6 +47,7 @@ import productCategoryRoutes from "./routes/productCategories.routes.js";
 import posRoutes from "./routes/pos.routes.js";
 import customerReturnRoutes from "./routes/customerReturns.routes.js";
 import returnPolicyRoutes from "./routes/returnPolicy.routes.js";
+import taxRoutes from "./routes/tax.routes.js";
 
 // ✅ Import reconciliation routes
 import reconciliationRoutes from "./routes/reconciliations.routes.js";
@@ -109,6 +110,7 @@ app.use("/api/product-categories", productCategoryRoutes);
 app.use("/api/pos", posRoutes);
 app.use("/api/customer-returns", customerReturnRoutes);
 app.use("/api/return-policy", returnPolicyRoutes);
+app.use("/api/tax", taxRoutes);
 
 // ===============================
 // Operations routes

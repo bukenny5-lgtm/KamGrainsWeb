@@ -473,6 +473,23 @@ Each error entry should include:
 - Root cause: frontend/.env.local configured VITE_API_BASE_URL for port 3001, while backend/.env and backend/src/server.js use PORT=3000. No development listener existed on 3001.
 - Verification: direct sec.login completed in approximately 3.5 seconds; user and role queries completed afterward. With the backend running on configured port 3000, direct HTTP login returned 200 in 4,752 ms and the health endpoint returned 200 in 611 ms.
 - Correction: changed frontend/.env.local to http://localhost:3000/api. Frontend timeout was not increased and authentication/security logic was not bypassed.
+
+# ERR-P6C-UI-001 — Product tax classification was not discoverable — 2026-09-24
+
+- Observed: tax APIs and a Setup classification control existed, but the control was buried below Business Features and product cards/Quick Sale did not show the resulting VAT information.
+- Correction: retained the authoritative product `tax_code_id`, exposed active tax metadata through product/price/POS APIs, added an activation-readiness status panel, and added a compact Quick Sale Taxable Value/VAT/Total summary. PHASE5-AB-TEST was not mass-classified or changed automatically.
+
+# ERR-P6C-UI-002 — Activation bypass investigation — 2026-09-24
+
+- Finding: the normal feature and tax-settings API paths both call `app.tax_activation_precheck`; the database function remains the authoritative blocker. The previously observed enabled development state was not reproduced in the restored working state and no production state was changed. Direct SQL/migration edits remain outside the normal activation path and are not exposed as a UI override.
+
+# ERR-P6C-FINAL-UX-001 — Selling Price tax treatment and rate history gap — 2026-09-24
+
+- Correction: Selling Price Management now shows a dynamic Tax Treatment selector and saves only the authoritative product tax-code field through a dedicated permission-checked endpoint. Tax Rate Management adds effective-dated periods and rejects invalid or overlapping active periods. Product and transaction resolution selects the applicable period by tax-code code/date, preserving historical snapshots.
+
+# ERR-P6D-UX-001 — Tax selector optimistic save and quantity editing — 2026-09-24
+
+- Correction: tax treatment selection is now a row-local draft with an explicit Save Tax action; backend confirmation/refetch is required before it is treated as persisted. Quick Sale quantity editing now preserves string states while typing and validates/normalizes only on blur or Enter, allowing values such as `0.5` without forced minimum replacement.
 # ERR-P5-ISR-LOT-001 — Source location selector used current branch instead of selected branch — 2026-09-22
 
 - Observed: selecting TEST_B in the Internal Stock Request transfer form still showed KAM's Clean Beans Store and then reported no available source lot for NB-CLEAN.
@@ -489,3 +506,15 @@ Each error entry should include:
 
 - Observed: the form header implied the current branch, but did not expose requesting branch or receiving location selectors; history/detail omitted receiving location.
 - Correction: added authorized requesting-branch and receiving-location selectors, stale-location clearing on branch changes, explicit Preferred Source Branch labeling, and backend branch/location display fields.
+## 2026-09-24 — Phase 6 scope limitation
+
+- The existing POS/AR/AP PostgreSQL posting functions still post their legacy gross/revenue shape and do not yet split output/input VAT control lines. The Phase 6 migration therefore keeps tax disabled by default and records the limitation rather than silently enabling incorrect accounting.
+## 2026-09-24 — Phase 6B integration boundary
+
+- Tax-aware POS/AR/AP paths now require configured VAT control accounts and effective product tax codes when the tax engine is enabled. Existing VAT-disabled behavior remains available.
+- Delivery and GRN remain logistics/inventory events; tax authority is the POS sale or AR/AP invoice posting event. Refund settlement remains a liability settlement and does not reverse tax a second time.
+- Full authenticated mixed-basket, branch A/B, AP recoverability, and browser acceptance remain pending because no authenticated browser session was available in this run.
+## 2026-09-24 — Phase 6C runtime boundary
+
+- The first local port-3000 process was stale and returned 404 for the newly mounted tax routes. Current source was separately verified on temporary local port 3011: health returned 200 and protected tax endpoints returned 401 unauthenticated. The configured development target remains port 3000; no production service was touched.
+- Rollback-contained POS/AR/AP acceptance passed with exact 4,000 net / 720 VAT / 4,720 gross results. Authenticated CREDIT POS, returns/refunds, branch A/B, and UI acceptance remain pending because no safe credentials/session were available.

@@ -139,3 +139,9 @@ Phase 24/25 foundations are implemented in development and legacy branch-sensiti
 ### Phase 5 Extension — Stock Visibility, Replenishment and Procurement (2026-09-22)
 
 Added separate cross-branch stock visibility, Internal Stock Requests with partial approvals and multiple transfers, explicit transfer receipt variance, and branch procurement modes with PO approval. Authenticated development API acceptance passed for visibility/write isolation, partial fulfillment, duplicate-post protection, procurement gating, audit actors and accounting invariance. Browser acceptance and reverse Head Office request direction remain pending. No production changes, deployment, or commit.
+### Phase 6 — Configurable VAT / Tax Engine (foundation)
+
+Forward schema/API/calculation foundation is present; activation is intentionally pending tax-aware accounting and browser acceptance. See `docs/VAT_TAX_ENGINE.md`.
+### Phase 6B — VAT accounting and universality hardening
+
+Tax account mapping, activation safety, POS/AR/AP tax posting boundaries, return snapshots, and generic-rate validation are implemented. Enablement remains gated on product classification and authenticated/manual acceptance. EFRIS remains a separate Phase 7 adapter.

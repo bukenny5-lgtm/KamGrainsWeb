@@ -75,6 +75,15 @@ router.patch(
         return res.status(400).json({ success: false, message: `Unknown feature code(s): ${unknown.join(", ")}.` });
       }
 
+      if (updates.tax_engine === true) {
+        const precheck = await client.query("SELECT check_code,is_valid,message FROM app.tax_activation_precheck($1)", [companyId]);
+        const failed = precheck.rows.filter((row) => !row.is_valid);
+        if (failed.length) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ success: false, message: "Tax activation precheck failed.", checks: precheck.rows });
+        }
+      }
+
       const previous = await client.query(
         `SELECT feature_code, is_enabled FROM app.company_feature WHERE company_id = $1 AND feature_code = ANY($2::text[])`,
         [companyId, codes]

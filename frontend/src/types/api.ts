@@ -22,6 +22,11 @@ export type Product = {
   category_id?: string | null;
   category_code?: string | null;
   category_name?: string | null;
+  tax_code_id?: string | null;
+  tax_code?: string | null;
+  tax_name?: string | null;
+  tax_treatment?: "STANDARD" | "ZERO_RATED" | "EXEMPT" | "OUT_OF_SCOPE" | string | null;
+  tax_rate?: number | string | null;
 };
 
 export type ProductCategory = {
@@ -54,6 +59,11 @@ export type PosProduct = {
   track_expiry: boolean;
   unit_price?: string | number | null;
   pricing_mode?: "FIXED" | "MANUAL" | "HYBRID" | string;
+  tax_code_id?: string | null;
+  tax_code?: string | null;
+  tax_name?: string | null;
+  tax_treatment?: string | null;
+  tax_rate?: string | number | null;
   barcodes?: Array<{ barcode_id: string; barcode: string; uom_code?: string | null; qty_per_scan: string | number }>;
   qty_on_hand?: string | number | null;
   lots?: PosLotOption[];
@@ -85,6 +95,8 @@ export type PosSale = {
   change_amount: string | number;
   subtotal: string | number;
   total_amount: string | number;
+  taxable_subtotal?: string | number;
+  tax_total?: string | number;
   status: string;
   cashier_name?: string | null;
   lines: PosSaleLine[];
@@ -120,7 +132,8 @@ export type BusinessFeatureCode =
   | "reports"
   | "pos"
   | "barcode"
-  | "MULTI_LOCATION";
+  | "MULTI_LOCATION"
+  | "tax_engine";
 
 export type BusinessFeatureDefinition = {
   feature_code: BusinessFeatureCode;

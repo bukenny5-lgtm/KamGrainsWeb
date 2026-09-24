@@ -31,6 +31,8 @@ async function loadSource(sourceType, sourceId) {
                'source_line_id', l.pos_sale_line_id, 'product_id', l.product_id,
                'product_name', p.product_name, 'sku', p.sku, 'uom', p.uom_code, 'lot_id', l.lot_id,
                'qty', l.qty, 'unit_price', l.unit_price,
+               'tax_code_id', l.tax_code_id, 'tax_code', l.tax_code, 'tax_treatment', l.tax_treatment, 'tax_rate', l.tax_rate,
+               'taxable_amount', l.taxable_amount, 'tax_amount', l.tax_amount, 'gross_amount', l.gross_amount,
                'returned_qty', COALESCE((SELECT SUM(crl.qty_returned) FROM sal.customer_return cr JOIN sal.customer_return_line crl ON crl.customer_return_id=cr.customer_return_id WHERE cr.status='POSTED' AND cr.source_type='POS' AND cr.source_id=ps.pos_sale_id AND crl.source_line_id=l.pos_sale_line_id),0)
              ) ORDER BY l.created_at) AS lines
       FROM sal.pos_sale ps JOIN sal.pos_sale_line l ON l.pos_sale_id=ps.pos_sale_id
@@ -257,7 +259,8 @@ router.post("/", requireAuth, requirePermission("CREATE_CUSTOMER_RETURN"), async
       const disposition = String(line.return_disposition || (String(body.condition_code || "GOOD").toUpperCase() === "GOOD" ? "RESTOCK" : "QUARANTINE")).toUpperCase();
       if (!["RESTOCK", "QUARANTINE", "WRITE_OFF"].includes(disposition)) throw new Error("Invalid return disposition.");
       if (disposition === "RESTOCK" && ["DAMAGED", "DEFECTIVE", "EXPIRED"].includes(String(body.condition_code || "GOOD").toUpperCase())) throw new Error("Damaged, defective, or expired goods cannot be restocked.");
-      await client.query(`INSERT INTO sal.customer_return_line(customer_return_id,source_line_id,product_id,lot_id,qty_returned,original_sale_qty,original_unit_price,original_unit_cost,return_disposition,reason) VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,$9)`, [header.rows[0].customer_return_id, line.source_line_id, sourceLine.product_id, sourceLine.lot_id || null, requestedQty, Number(sourceLine.qty), Number(sourceLine.unit_price || 0), disposition, line.reason || null]);
+      await client.query(`INSERT INTO sal.customer_return_line(customer_return_id,source_line_id,product_id,lot_id,qty_returned,original_sale_qty,original_unit_price,original_unit_cost,return_disposition,reason,tax_code_id,tax_code,tax_treatment,tax_rate,original_taxable_amount,original_tax_amount,original_gross_amount,returned_taxable_amount,returned_tax_amount,returned_gross_amount)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`, [header.rows[0].customer_return_id, line.source_line_id, sourceLine.product_id, sourceLine.lot_id || null, requestedQty, Number(sourceLine.qty), Number(sourceLine.unit_price || 0), disposition, line.reason || null, sourceLine.tax_code_id || null, sourceLine.tax_code || null, sourceLine.tax_treatment || null, sourceLine.tax_rate || null, Number(sourceLine.taxable_amount || 0), Number(sourceLine.tax_amount || 0), Number(sourceLine.gross_amount || sourceLine.qty * sourceLine.unit_price || 0), Number(sourceLine.taxable_amount || 0) * requestedQty / Number(sourceLine.qty), Number(sourceLine.tax_amount || 0) * requestedQty / Number(sourceLine.qty), Number(sourceLine.gross_amount || sourceLine.qty * sourceLine.unit_price || 0) * requestedQty / Number(sourceLine.qty)]);
     }
     await client.query("COMMIT");
     return res.status(201).json({ success: true, customer_return: header.rows[0] });
@@ -273,6 +276,17 @@ router.post("/:id/post", requireAuth, requirePermission("POST_CUSTOMER_RETURN"),
     await client.query("BEGIN");
     await setDatabaseUserContext(client, req);
     const result = await client.query("SELECT sal.post_customer_return($1::uuid) AS customer_return_id", [returnId]);
+    const tax = await client.query(`SELECT r.return_no,r.posted_journal_id,COALESCE(SUM(l.returned_taxable_amount),0) AS net_amount,
+      COALESCE(SUM(l.returned_tax_amount),0) AS tax_amount,COALESCE(SUM(l.returned_gross_amount),0) AS gross_amount
+      FROM sal.customer_return r JOIN sal.customer_return_line l ON l.customer_return_id=r.customer_return_id
+      WHERE r.customer_return_id=$1 GROUP BY r.return_no,r.posted_journal_id`, [returnId]);
+    if (tax.rows[0] && Number(tax.rows[0].tax_amount) > 0) {
+      const account = await client.query("SELECT output_vat_account_id FROM app.company_profile WHERE is_active ORDER BY created_at,company_id LIMIT 1");
+      if (!account.rows[0]?.output_vat_account_id) throw new Error("Output VAT Payable account is not configured.");
+      await client.query("UPDATE fin.gl_journal_line SET debit=$2, credit=0 WHERE journal_id=$1 AND memo=$3", [tax.rows[0].posted_journal_id, tax.rows[0].net_amount, `Sales return ${tax.rows[0].return_no}`]);
+      await client.query("INSERT INTO fin.gl_journal_line(journal_id,account_id,party_id,memo,debit,credit) VALUES($1,$2,NULL,$3,$4,0)", [tax.rows[0].posted_journal_id, account.rows[0].output_vat_account_id, `Output VAT reversal ${tax.rows[0].return_no}`, tax.rows[0].tax_amount]);
+      await client.query("SELECT fin.assert_balanced($1::uuid)", [tax.rows[0].posted_journal_id]);
+    }
     await client.query("COMMIT");
     return res.json({ success: true, customer_return_id: result.rows[0]?.customer_return_id, message: "Customer return posted." });
   } catch (error) { await client.query("ROLLBACK").catch(() => {}); console.error("Customer return post failed", { returnId, error }); return res.status(error.statusCode || 400).json({ success: false, message: error.statusCode === 401 ? error.message : "Failed to post customer return." }); }

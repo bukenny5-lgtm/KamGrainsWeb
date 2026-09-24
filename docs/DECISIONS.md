@@ -270,3 +270,21 @@
 - Existing Stock Requests and Inter-Site Transfers screens are the repository-equivalent operational pages; no duplicate pages or endpoints were introduced.
 - Transfer UI keeps View and row double-click as separate access paths and makes unresolved transit explicit.
 - Browser acceptance remains PENDING when no authenticated browser tab exists; static/API evidence is not promoted to browser PASS.
+## ADR-0018 — Tax snapshots precede tax activation
+
+- **Decision:** Store effective-dated tax master data and nullable transaction snapshots first; leave the tax feature disabled until accounting posting and return reversal paths are tax-aware.
+- **Reason:** This preserves existing ERP behavior and prevents a current-rate change from recalculating historical documents or introducing duplicate VAT in credit POS/return flows.
+## ADR-0019 — Tax recognition follows the authoritative accounting event
+
+- **Decision:** POS is the accounting authority for POS sales, including CREDIT POS. Generated credit AR invoices reuse the POS journal. Ordinary AR invoices post revenue/output VAT once; AP invoices post input VAT at AP posting; Delivery and GRN do not create duplicate tax.
+- **Decision:** Refund settlement never posts a second tax reversal. Customer-return tax facts are copied from the original line snapshot for later proportional reversal integration.
+
+## ADR-0020 — Configurable effective-dated VAT rates
+
+- Uganda STANDARD is seeded at 18%, but rates are configuration data in company-scoped effective-dated tax-code rows. Products reference tax codes, not percentages; future rate periods are added without rewriting product records or posted snapshots.
+- Selling Price Management is a convenience editor for `inv.product.tax_code_id`; Tax Rate Management is restricted to `MANAGE_TAX_CONFIGURATION`. The dedicated Product Tax Classification control remains available.
+
+## ADR-0021 — Explicit tax save and editable POS quantities
+
+- Tax treatment changes remain local drafts until an explicit Save Tax request succeeds; dependent product/POS/precheck queries are then refreshed.
+- POS quantities preserve intermediate text while typing and validate on commit. Checkout presentation may improve, but POS accounting, inventory, lot/cost, branch/location, and tax snapshot authority remain unchanged.

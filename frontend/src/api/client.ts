@@ -273,6 +273,11 @@ export async function getProducts() {
   return response.data;
 }
 
+export async function updateProductTaxCode(productId: string, tax_code_id: string | null) {
+  const response = await api.patch(`/products/${encode(productId)}/tax-code`, { tax_code_id });
+  return response.data;
+}
+
 export async function getPosProducts(params: { q?: string; location_id?: string } = {}) {
   const response = await api.get("/pos/products", { params });
   return response.data;
@@ -440,6 +445,36 @@ export async function updateProduct(productId: string, payload: ApiPayload) {
 
 export async function deleteProduct(productId: string) {
   const response = await api.delete(`/products/${encode(productId)}`);
+  return response.data;
+}
+
+export async function getTaxCodes() {
+  const response = await api.get("/tax/codes");
+  return response.data;
+}
+
+export async function getTaxSettings() {
+  const response = await api.get("/tax/settings");
+  return response.data;
+}
+
+export async function getTaxActivationPrecheck() {
+  const response = await api.get("/tax/activation-precheck");
+  return response.data;
+}
+
+export async function updateTaxSettings(payload: Record<string, unknown>) {
+  const response = await api.patch("/tax/settings", payload);
+  return response.data;
+}
+
+export async function createTaxCode(payload: Record<string, unknown>) {
+  const response = await api.post("/tax/codes", payload);
+  return response.data;
+}
+
+export async function updateTaxCode(id: string, payload: Record<string, unknown>) {
+  const response = await api.patch(`/tax/codes/${encode(id)}`, payload);
   return response.data;
 }
 

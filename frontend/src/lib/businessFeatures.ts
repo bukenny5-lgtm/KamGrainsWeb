@@ -14,6 +14,7 @@ export const BUSINESS_FEATURE_FALLBACK: BusinessFeatures = {
   pos: false,
   barcode: false,
   MULTI_LOCATION: false,
+  tax_engine: false,
 };
 
 export function useBusinessFeatures() {

@@ -5,6 +5,7 @@ import { requirePermission, getUserRoles, ACTION_ROLES } from "../middleware/per
 import { getActiveCompanyId, resolveBusinessFeatureMap } from "../services/businessFeatures.service.js";
 import { setDatabaseUserContext } from "../utils/uuid.js";
 import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
+import { calculateDocumentTotals, calculateTaxLine } from "../services/tax.service.js";
 
 const router = express.Router();
 router.use(requireAuth,requireLocationAccessWhenSpecified);
@@ -88,6 +89,8 @@ async function loadSaleById(saleId) {
       ps.amount_tendered,
       ps.change_amount,
       ps.subtotal,
+      ps.taxable_subtotal,
+      ps.tax_total,
       ps.total_amount,
       ps.status,
       ps.posted_at,
@@ -111,6 +114,12 @@ async function loadSaleById(saleId) {
           'qty', l.qty,
           'unit_price', l.unit_price,
           'line_total', l.line_total,
+          'tax_code', l.tax_code,
+          'tax_treatment', l.tax_treatment,
+          'tax_rate', l.tax_rate,
+          'taxable_amount', l.taxable_amount,
+          'tax_amount', l.tax_amount,
+          'gross_amount', l.gross_amount,
           'lot_id', l.lot_id,
           'lot_code', lot.lot_code
         ) ORDER BY l.created_at, l.pos_sale_line_id)
@@ -150,9 +159,13 @@ router.get("/prices", requireAuth, requirePosFeature, requirePermission("VIEW_PO
     const result = await query(`
       SELECT p.product_id, p.sku, p.product_name, p.is_active AS product_active,
              p.is_saleable, pp.unit_price, COALESCE(pp.is_active, false) AS price_active,
+             tc.tax_code_id, tc.code AS tax_code, tc.name AS tax_name, tc.treatment AS tax_treatment, tc.rate AS tax_rate,
              pp.created_at AS price_created_at, pp.updated_at AS price_updated_at
       FROM inv.product p
       LEFT JOIN sal.pos_product_price pp ON pp.product_id = p.product_id
+      LEFT JOIN app.tax_code assigned_tc ON assigned_tc.tax_code_id=p.tax_code_id
+      LEFT JOIN app.tax_code tc ON tc.company_id=assigned_tc.company_id AND tc.code=assigned_tc.code
+        AND tc.is_active AND tc.effective_from <= current_date AND (tc.effective_to IS NULL OR tc.effective_to >= current_date)
       WHERE ($1 = '' OR p.sku ILIKE '%' || $1 || '%' OR p.product_name ILIKE '%' || $1 || '%')
       ORDER BY p.product_name LIMIT 500;`, [search]);
     return res.json({ success: true, count: result.rowCount, prices: result.rows, data: result.rows });
@@ -166,8 +179,12 @@ router.get("/prices/:productId", requireAuth, requirePosFeature, requirePermissi
     const result = await query(`
       SELECT p.product_id, p.sku, p.product_name, p.is_active AS product_active,
              p.is_saleable, pp.unit_price, COALESCE(pp.is_active, false) AS price_active,
+             tc.tax_code_id, tc.code AS tax_code, tc.name AS tax_name, tc.treatment AS tax_treatment, tc.rate AS tax_rate,
              pp.created_at AS price_created_at, pp.updated_at AS price_updated_at
       FROM inv.product p LEFT JOIN sal.pos_product_price pp ON pp.product_id = p.product_id
+      LEFT JOIN app.tax_code assigned_tc ON assigned_tc.tax_code_id=p.tax_code_id
+      LEFT JOIN app.tax_code tc ON tc.company_id=assigned_tc.company_id AND tc.code=assigned_tc.code
+        AND tc.is_active AND tc.effective_from <= current_date AND (tc.effective_to IS NULL OR tc.effective_to >= current_date)
       WHERE p.product_id = $1;`, [req.params.productId]);
     if (!result.rowCount) return res.status(404).json({ success: false, message: "Product not found." });
     return res.json({ success: true, data: result.rows[0], price: result.rows[0] });
@@ -226,6 +243,7 @@ router.get(
           p.track_expiry,
           pp.unit_price,
           COALESCE(cp.pos_pricing_mode, 'FIXED') AS pricing_mode,
+          tc.tax_code_id, tc.code AS tax_code, tc.name AS tax_name, tc.treatment AS tax_treatment, tc.rate AS tax_rate,
           COALESCE((SELECT json_agg(json_build_object('barcode_id', pb.barcode_id, 'barcode', pb.barcode, 'uom_code', pb.uom_code, 'qty_per_scan', pb.qty_per_scan) ORDER BY pb.barcode) FROM inv.product_barcode pb WHERE pb.product_id = p.product_id AND pb.is_active), '[]'::json) AS barcodes,
           COALESCE(stock.qty_on_hand, 0) AS qty_on_hand,
           COALESCE((
@@ -248,6 +266,8 @@ router.get(
         FROM inv.product p
         CROSS JOIN (SELECT pos_pricing_mode FROM app.company_profile WHERE is_active = true ORDER BY created_at, company_id LIMIT 1) cp
         LEFT JOIN sal.pos_product_price pp ON pp.product_id = p.product_id AND pp.is_active
+        LEFT JOIN app.tax_code assigned_tc ON assigned_tc.tax_code_id=p.tax_code_id
+        LEFT JOIN app.tax_code tc ON tc.company_id=assigned_tc.company_id AND tc.code=assigned_tc.code AND tc.is_active AND tc.effective_from <= current_date AND (tc.effective_to IS NULL OR tc.effective_to >= current_date)
         LEFT JOIN stock ON stock.product_id = p.product_id
           WHERE p.is_active = true
           AND p.is_saleable = true
@@ -412,15 +432,24 @@ router.post(
 
       const productIds = lines.map((line) => line.product_id);
       const pricingMode = await getPricingMode();
+      const taxConfig = await client.query(`SELECT cp.tax_engine_enabled AND COALESCE(cf.is_enabled,false) AS tax_enabled,
+        COALESCE(cp.tax_pricing_mode,'TAX_EXCLUSIVE') AS tax_pricing_mode
+        FROM app.company_profile cp LEFT JOIN app.company_feature cf ON cf.company_id=cp.company_id AND cf.feature_code='tax_engine'
+        WHERE cp.is_active ORDER BY cp.created_at,cp.company_id LIMIT 1`);
+      const taxEnabled = Boolean(taxConfig.rows[0]?.tax_enabled);
+      const taxPricingMode = taxConfig.rows[0]?.tax_pricing_mode || "TAX_EXCLUSIVE";
       const products = await client.query(`
         SELECT p.product_id, p.product_name, p.is_active, p.is_saleable, p.is_stock_item, p.track_lots,
-               pp.unit_price
+               pp.unit_price, tc.tax_code_id, tc.code AS tax_code, tc.treatment AS tax_treatment, tc.rate AS tax_rate
         FROM inv.product p
         LEFT JOIN sal.pos_product_price pp ON pp.product_id = p.product_id AND pp.is_active
+        LEFT JOIN app.tax_code assigned_tc ON assigned_tc.tax_code_id = p.tax_code_id
+        LEFT JOIN app.tax_code tc ON tc.company_id=assigned_tc.company_id AND tc.code=assigned_tc.code AND tc.is_active AND tc.effective_from <= current_date AND (tc.effective_to IS NULL OR tc.effective_to >= current_date)
         WHERE p.product_id = ANY($1::uuid[]);`, [productIds]);
       const productMap = new Map(products.rows.map((row) => [row.product_id, row]));
       const seen = new Set();
       let subtotal = 0;
+      const taxLines = [];
       for (const line of lines) {
         const product = productMap.get(line.product_id);
         const qty = Number(line.qty);
@@ -455,13 +484,21 @@ router.post(
           throw new Error(`No active POS price is configured for ${product.product_name}.`);
         }
         if (unitPrice === null || !Number.isFinite(unitPrice) || unitPrice < 0) throw new Error(`No valid POS price is configured for ${product.product_name}.`);
+        if (taxEnabled && !product.tax_code_id) throw new Error(`Product ${product.product_name} lacks tax configuration.`);
         if (product.track_lots && !line.lot_id) throw new Error(`A lot is required for ${product.product_name}.`);
         line._unitPrice = unitPrice;
         line._priceSource = priceSource;
         line._referencePrice = configuredPrice;
-        subtotal += qty * unitPrice;
+        line._tax = taxEnabled ? calculateTaxLine({ amount: (qty * unitPrice).toFixed(2), rate: product.tax_rate || 0, treatment: product.tax_treatment || "OUT_OF_SCOPE", pricingMode: taxPricingMode }) : { taxableAmount: (qty * unitPrice).toFixed(2), taxAmount: "0.00", grossAmount: (qty * unitPrice).toFixed(2) };
+        line._tax.tax_code_id = product.tax_code_id || null;
+        line._tax.tax_code = product.tax_code || null;
+        line._tax.tax_treatment = product.tax_treatment || null;
+        line._tax.tax_rate = product.tax_rate || 0;
+        taxLines.push(line._tax);
+        subtotal += Number(line._tax.grossAmount);
       }
       subtotal = Number(subtotal.toFixed(2));
+      const taxTotals = calculateDocumentTotals(taxLines);
       const tendered = body.amount_tendered === null || body.amount_tendered === undefined || body.amount_tendered === ""
         ? (method === "CASH" ? null : method === "CREDIT" ? null : subtotal)
         : Number(body.amount_tendered);
@@ -470,12 +507,12 @@ router.post(
       const saleResult = await client.query(`
         INSERT INTO sal.pos_sale (
           sale_no, transaction_date, location_id, customer_id, payment_method,
-          amount_tendered, change_amount, subtotal, total_amount, status,
+          amount_tendered, change_amount, subtotal, total_amount, taxable_subtotal, tax_total, tax_snapshot_at, status,
           idempotency_key, created_by, due_date
         )
-        VALUES (sal.next_pos_sale_no(), current_date, $1, $2, $3, $4, $5, $6, $6, 'DRAFT', $7, $8, $9)
+        VALUES (sal.next_pos_sale_no(), current_date, $1, $2, $3, $4, $5, $6, $6, $10, $11, now(), 'DRAFT', $7, $8, $9)
         RETURNING pos_sale_id;`,
-        [locationId, customerId, method, tendered, method === "CASH" ? Number((tendered - subtotal).toFixed(2)) : 0, subtotal, idempotencyKey, req.user?.user_id || null, method === "CREDIT" ? (body.due_date || null) : null]
+        [locationId, customerId, method, tendered, method === "CASH" ? Number((tendered - subtotal).toFixed(2)) : 0, subtotal, idempotencyKey, req.user?.user_id || null, method === "CREDIT" ? (body.due_date || null) : null, taxTotals.taxableAmount, taxTotals.taxAmount]
       );
       const saleId = saleResult.rows[0].pos_sale_id;
       for (const line of lines) {
@@ -483,12 +520,28 @@ router.post(
         const qty = Number(line.qty);
         const unitPrice = Number(line._unitPrice);
         await client.query(`
-          INSERT INTO sal.pos_sale_line(pos_sale_id, product_id, qty, unit_price, line_total, lot_id, reference_price, price_source, price_override_reason)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);`,
-          [saleId, line.product_id, qty, unitPrice, Number((qty * unitPrice).toFixed(2)), line.lot_id || null, line._referencePrice, line._priceSource, line._overrideReason || null]
+          INSERT INTO sal.pos_sale_line(pos_sale_id, product_id, qty, unit_price, line_total, lot_id, reference_price, price_source, price_override_reason,
+            tax_code_id, tax_code, tax_treatment, tax_rate, taxable_amount, tax_amount, gross_amount)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16);`,
+          [saleId, line.product_id, qty, unitPrice, Number(line._tax.grossAmount), line.lot_id || null, line._referencePrice, line._priceSource, line._overrideReason || null,
+            line._tax.tax_code_id, line._tax.tax_code, line._tax.tax_treatment, line._tax.tax_rate, line._tax.taxableAmount, line._tax.taxAmount, line._tax.grossAmount]
         );
       }
       await client.query("SELECT sal.post_pos_sale($1::uuid);", [saleId]);
+      if (taxEnabled && Number(taxTotals.taxAmount) > 0) {
+        const account = await client.query("SELECT output_vat_account_id FROM app.company_profile WHERE is_active ORDER BY created_at,company_id LIMIT 1");
+        if (!account.rows[0]?.output_vat_account_id) throw new Error("Output VAT Payable account is not configured.");
+        const journal = await client.query("SELECT ps.posted_journal_id,ps.sale_no FROM sal.pos_sale ps WHERE ps.pos_sale_id=$1", [saleId]);
+        await client.query("UPDATE fin.gl_journal_line SET credit=$2, debit=0 WHERE journal_id=$1 AND memo=$3", [journal.rows[0].posted_journal_id, taxTotals.taxableAmount, `POS revenue ${journal.rows[0].sale_no}`]);
+        await client.query("INSERT INTO fin.gl_journal_line(journal_id,account_id,party_id,memo,debit,credit) VALUES($1,$2,NULL,$3,0,$4)", [journal.rows[0].posted_journal_id, account.rows[0].output_vat_account_id, `POS output VAT ${journal.rows[0].sale_no}`, taxTotals.taxAmount]);
+        await client.query("SELECT fin.assert_balanced($1::uuid)", [journal.rows[0].posted_journal_id]);
+      }
+      if (taxEnabled) {
+        await client.query(`UPDATE sal.ar_invoice ai SET taxable_subtotal=ps.taxable_subtotal,tax_total=ps.tax_total,gross_total=ps.total_amount,tax_snapshot_at=ps.tax_snapshot_at
+          FROM sal.pos_sale ps WHERE ai.ar_invoice_id=ps.credit_ar_invoice_id AND ps.pos_sale_id=$1`, [saleId]);
+        await client.query(`UPDATE sal.ar_invoice_line al SET tax_code_id=pl.tax_code_id,tax_code=pl.tax_code,tax_treatment=pl.tax_treatment,tax_rate=pl.tax_rate,taxable_amount=pl.taxable_amount,tax_amount=pl.tax_amount,gross_amount=pl.gross_amount
+          FROM sal.pos_sale ps JOIN sal.pos_sale_line pl ON pl.pos_sale_id=ps.pos_sale_id WHERE al.ar_invoice_id=ps.credit_ar_invoice_id AND al.product_id=pl.product_id AND ps.pos_sale_id=$1`, [saleId]);
+      }
       await client.query("COMMIT");
       const sale = await loadSaleById(saleId);
       return res.status(201).json({ success: true, message: "POS sale completed.", sale, receipt: sale });

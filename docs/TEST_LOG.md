@@ -766,3 +766,48 @@ Reverse Head Office request, reverse authorization, stock before/after, transit 
 - Backend syntax/build: PASS.
 - git diff --check: PASS.
 - Browser retest: PENDING.
+## Phase 6 VAT / Tax Engine foundation — 2026-09-24
+
+| Check | Result | Evidence |
+|---|---|---|
+| Phase 34 migration | PASS | Applied to local `kam_grains_db`; four Uganda tax codes present. |
+| Decimal tax unit tests | PASS | Exclusive, inclusive, zero/exempt/out-of-scope, and line-total reconciliation tests pass. |
+| Backend build | PASS | `npm.cmd run build`. |
+| Changed backend syntax | PASS | `node --check` on tax route, product route, and tax service. |
+| Frontend TypeScript/build | PASS | `npx.cmd tsc -b --pretty false` and `npm.cmd run build`. |
+| Authenticated tax/POS/AR/AP/return runtime matrix | NOT RUN | Requires authenticated acceptance after legacy posting functions are tax-wired. |
+| Browser acceptance | NOT RUN | Manual browser session remains required. |
+## Phase 6B VAT accounting integration — 2026-09-24
+
+| Check | Result | Evidence |
+|---|---|---|
+| Universality audit | PASS-CODE | Tax calculation reads configured tax treatment/rate; Uganda/KAM occurrences are seed/configuration, documentation, fallback branding, or platform identity. |
+| Migrations 35–37 | PASS | Applied to local `kam_grains_db`; account mappings, activation function, invoice posting functions, and return snapshot columns verified. |
+| Activation precheck | PASS | Returns actionable checks; current development state is not ready because active saleable/purchasable products remain unclassified. |
+| Tax formula tests | PASS | 7 tests: inclusive/exclusive 18%, generic 10%, mixed basket, zero/exempt/out-of-scope, rounding, disabled behavior. |
+| Backend build / route syntax | PASS | Backend build plus changed route `node --check` passed. |
+| Frontend TypeScript/build | PASS | `npx.cmd tsc -b --pretty false` and `npm.cmd run build` passed. |
+| Authenticated POS/AR/AP/return/branch runtime matrix | NOT RUN | Requires controlled authenticated development session. |
+| Browser acceptance | NOT RUN | Manual browser validation remains required. |
+## Phase 6C automated VAT runtime acceptance — 2026-09-24
+
+| Check | Result | Evidence |
+|---|---|---|
+| Runtime target | PASS | Local development database `kam_grains_db`; health endpoint confirmed. Current source tested on temporary local port 3011 because the existing port-3000 process was stale; configured target remains `http://localhost:3000/api`. |
+| Migrations 34–37 | PASS | Tax table/codes, VAT accounts, activation function, posting functions, and return snapshot columns exist. |
+| Activation precheck | PASS/BLOCKED | Input/output accounts and default tax code pass; 7 active saleable and 11 active purchasable products remain unclassified. VAT remains disabled. |
+| Unauthenticated tax API protection | PASS | `/api/tax/settings` and `/api/tax/activation-precheck` returned 401 on current source. |
+
+| Phase 6C product classification UX | PASS-CODE | Setup exposes Product Tax Classification backed by active configured tax codes; product API validation rejects inactive, expired, or cross-company tax codes. Manual authenticated browser assignment of PHASE5-AB-TEST remains pending. |
+| Phase 6C Quick Sale VAT display | PASS-CODE | POS product API exposes tax_code_id/tax_code/tax_treatment/tax_rate and Quick Sale renders Taxable Value, VAT, and Total when tax is enabled. Authenticated browser retest remains pending. |
+| Phase 6C activation bypass review | PASS | Tax settings and Business Features tax_engine activation paths both call `app.tax_activation_precheck`; no development override is exposed. |
+
+| Phase 6C final Selling Price tax selector | PASS-CODE | Selling Price Management now shows dynamic Tax Treatment values and a separate permission-checked Tax save path. Product price records remain tax-neutral. |
+| Phase 6C effective-date management | PASS-CODE | Tax-rate create/update paths validate bounds/date order and reject overlapping active periods; migration 38 adds database exclusion enforcement. Future-rate runtime/browser acceptance remains pending. |
+| Phase 6C non-hardcoded rate review | PASS | Transaction paths resolve configured tax rows; no product/POS/AR/AP/return transaction code contains a fixed 18% rate. Existing generic 10% tax utility test passes. |
+| Phase 6D tax-save UX | PASS-CODE | Tax selection is drafted locally and persisted only through explicit Save Tax; successful save refetches/invalidate relevant React Query caches. Authenticated browser persistence retest remains pending. |
+| Phase 6D quantity input | PASS-CODE | Quantity editing preserves intermediate text input and commits positive values at three-decimal precision with stock validation. Browser keyboard retest remains pending. |
+| Rollback POS/AR/AP accounting | PASS-ROLLBACK | Designated `NB-CLEAN` development fixture: POS net 4,000, VAT 720, gross 4,720; AR same; AP input VAT 720; all journals balanced. All test rows/configuration rolled back. POS journal debit/credit was 7,220/7,220 due to existing COGS/inventory lines. |
+| VAT disabled restoration | PASS | After rollback: tax engine false, feature false, VAT false, no temporary posted test sales. |
+| Generic/mixed/inclusive/exclusive formulas | PASS | 7 deterministic service tests pass, including configured 10% rate. |
+| Authenticated cash/credit/return/branch/browser matrix | NOT RUN | No safe authenticated development credentials/session was available. No credentials were created. |

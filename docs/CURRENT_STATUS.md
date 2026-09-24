@@ -222,3 +222,22 @@ Transfer detail presentation now normalizes quantity precision, formats costs, s
 ## Phase 5 Request Direction UI Fix — 2026-09-23
 
 Internal Stock Requests now make direction explicit in creation, history and detail views. Branch/location authorization remains backend-enforced. Static validation passes; manual reverse-HQ and opposite-direction request retests remain pending. Production untouched; no deployment or commit.
+## Phase 6 Configurable VAT / Tax Engine — 2026-09-24
+
+The Phase 6 tax foundation is implemented in the working tree and applied to local development only. It includes effective-dated Uganda tax codes, company settings, feature gating, product classification fields, snapshot columns, tax APIs, reports foundation, decimal formula utilities, and static/unit evidence. Tax remains disabled. Tax-aware GL posting, returns reversal, complete operational UI totals, authenticated runtime tests, and browser acceptance are still required before activation.
+## Phase 6B VAT Accounting Integration — 2026-09-24
+
+Phase 6B adds configured VAT account mappings, activation prechecks, tax-aware AR/AP journal functions, POS snapshots and output VAT adjustment, credit-POS duplication protection, and customer-return original tax snapshots. The engine remains disabled because existing active products require classification. Authenticated transaction/branch reconciliation and manual browser acceptance remain outstanding.
+
+Phase 6C UI correction adds a clearly labelled Product Tax Classification control in Setup, activation-readiness blockers, backend validation of selected effective tax codes, tax metadata on POS/price product responses, and Quick Sale Taxable Value/VAT/Total display. `PHASE5-AB-TEST` was not automatically classified; the required normal-UI assignment and controlled VAT retest remain pending. Production is untouched; no deployment or commit was performed.
+## Phase 6C final VAT configuration UX — 2026-09-24
+
+Selling Price Management now includes a Tax Treatment editor, and Tax Rate Management is administrator-only and effective-dated. Uganda STANDARD remains an 18% seed configuration, not transaction logic. Future periods resolve by code/date without product reassignment; active overlaps are rejected and posted snapshots remain unchanged. Migration 38 is present in the working tree and must be applied through the normal migration process before relying on database-level overlap enforcement.
+
+## Phase 6C Automated VAT Runtime Acceptance — 2026-09-24
+
+Migration 38 overlap enforcement was also applied and verified on the local development database; the final VAT state remains disabled with 7 saleable and 11 purchasable products unclassified.
+
+Phase 6D corrects tax-save UX by requiring explicit Save Tax confirmation and refreshing dependent React Query data. Quick Sale quantity editing now supports fractional keyboard entry, cart-line tax indicators, and an ordered checkout summary/payment flow. Existing POS accounting, inventory, lot/cost, branch/location, and tax snapshot behavior remains unchanged. Manual authenticated browser acceptance is still required.
+
+Rollback-contained POS/AR/AP VAT accounting acceptance passed on local development data. All temporary configuration and transactions were rolled back. Activation remains blocked by 7 unclassified active saleable and 11 unclassified active purchasable products. VAT and the tax feature are disabled. Authenticated CREDIT POS, returns/refunds, branch A/B, and manual browser acceptance remain pending.

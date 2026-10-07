@@ -1,8 +1,10 @@
 import express from "express";
 import { query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { getUserRoles, requirePermission } from "../middleware/permissions.js";
 
 const router = express.Router();
+router.use(requireAuth, requirePermission("VIEW_AUDIT"));
 
 /**
  * GET /api/audit-events
@@ -15,6 +17,9 @@ router.get("/", async (req, res) => {
       table_name,
       action,
       user_id,
+      branch_id,
+      date_from,
+      date_to,
       limit = 300,
     } = req.query;
 
@@ -34,6 +39,24 @@ router.get("/", async (req, res) => {
     if (user_id && user_id !== "ALL") {
       params.push(String(user_id));
       conditions.push(`e.user_id::text = $${params.length}`);
+    }
+
+    const globalAudit = getUserRoles(req).some((role) => ["ADMIN", "MANAGER", "AUDITOR", "HEAD_OFFICE"].includes(role));
+    if (!globalAudit && !req.branchId) return res.status(403).json({ success: false, message: "An authorized branch context is required to view audit events." });
+    const requestedBranch = branch_id && branch_id !== "ALL" ? String(branch_id) : null;
+    const scopedBranch = globalAudit ? requestedBranch : req.branchId;
+    if (scopedBranch) {
+      params.push(scopedBranch);
+      conditions.push(`COALESCE(e.row_data->>'branch_id', e.row_data->'new'->>'branch_id') = $${params.length}`);
+    }
+
+    if (date_from) {
+      params.push(String(date_from));
+      conditions.push(`e.event_ts >= $${params.length}::date`);
+    }
+    if (date_to) {
+      params.push(String(date_to));
+      conditions.push(`e.event_ts < ($${params.length}::date + INTERVAL '1 day')`);
     }
 
     if (search) {

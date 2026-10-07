@@ -36,6 +36,15 @@ function getErrorMessage(error: unknown) {
     return (error as any).response.data.message;
   }
 
+  if (typeof error === "object" && error !== null && "response" in error) {
+    const status = (error as any).response?.status;
+    if (status === 401) return "Invalid username or password.";
+    if (status === 403) return "Your account is not authorized to sign in.";
+    if (status >= 500) return "The server could not complete sign-in. Please try again.";
+  }
+  if (typeof error === "object" && error !== null && "request" in error && !(error as any).response) {
+    return "Cannot reach the server. Confirm the backend is running at http://localhost:3000.";
+  }
   if (error instanceof Error) {
     return error.message;
   }

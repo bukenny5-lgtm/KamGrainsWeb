@@ -18,6 +18,7 @@ import {
   Settings,
   ShoppingCart,
   ShieldCheck,
+  Store,
   Truck,
   UserCircle,
   UserCog,
@@ -175,6 +176,12 @@ const navItems: NavItem[] = [
     path: "/efris",
     icon: ShieldCheck,
     roles: roleList(ROLE_GROUPS.FINANCE_ACCESS),
+  },
+  {
+    label: "Till Management",
+    path: "/tills",
+    icon: Store,
+    roles: roleList(ROLE_GROUPS.POS_ACCESS),
   },
   {
     label: "Opening Balances",

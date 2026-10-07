@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import {
   AlertCircle,
   Eye,
@@ -15,6 +16,7 @@ import {
   assignUserRole,
   createRole,
   createUser,
+  getBranchAccessAdmin,
   getRoles,
   getUsers,
   removeUserRole,
@@ -109,6 +111,7 @@ function getErrorMessage(error: unknown) {
 }
 
 export default function Users() {
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
@@ -123,6 +126,8 @@ export default function Users() {
     password: "",
     password_expiry_days: "90",
     role_code: "ADMIN",
+    branch_id: "",
+    location_id: "",
   });
 
   const [newRole, setNewRole] = useState({
@@ -143,6 +148,12 @@ export default function Users() {
     queryFn: getRoles,
   });
 
+  const branchAccessQuery = useQuery({
+    queryKey: ["branch-access-admin"],
+    queryFn: getBranchAccessAdmin,
+  });
+  const queryClient = useQueryClient();
+
   const createUserMutation = useMutation({
     mutationFn: createUser,
     onSuccess: async () => {
@@ -155,7 +166,11 @@ export default function Users() {
         password: "",
         password_expiry_days: "90",
         role_code: "ADMIN",
+        branch_id: "",
+        location_id: "",
       });
+      await branchAccessQuery.refetch();
+      await queryClient.invalidateQueries({ queryKey: ["operating-context"] });
       setLastRefreshed(new Date());
     },
   });
@@ -236,6 +251,13 @@ export default function Users() {
 
   const users: AnyRecord[] = normalizeArray(usersQuery.data, ["users", "data"]);
   const roles: AnyRecord[] = normalizeArray(rolesQuery.data, ["roles", "data"]);
+  const accessBranches: AnyRecord[] = (branchAccessQuery.data?.branches || []).filter(
+    (branch: AnyRecord) => branch.is_active,
+  );
+  const accessLocations: AnyRecord[] = (branchAccessQuery.data?.locations || []).filter(
+    (location: AnyRecord) =>
+      location.is_active && location.branch_id === newUser.branch_id,
+  );
 
   const filteredUsers = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -263,6 +285,18 @@ export default function Users() {
     users.find((user) => user.user_id === selectedUser.user_id);
 
   const displayedSelectedUser = selectedUserLatest || selectedUser;
+  const selectedUserBranchGrants = (branchAccessQuery.data?.user_branches || [])
+    .filter((grant: AnyRecord) => grant.user_id === displayedSelectedUser?.user_id && grant.is_active)
+    .map((grant: AnyRecord) => ({
+      ...grant,
+      branch: (branchAccessQuery.data?.branches || []).find((branch: AnyRecord) => branch.branch_id === grant.branch_id),
+    }));
+  const selectedUserLocationGrants = (branchAccessQuery.data?.user_locations || [])
+    .filter((grant: AnyRecord) => grant.user_id === displayedSelectedUser?.user_id && grant.is_active)
+    .map((grant: AnyRecord) => ({
+      ...grant,
+      location: (branchAccessQuery.data?.locations || []).find((location: AnyRecord) => location.location_id === grant.location_id),
+    }));
 
   async function handleRefresh() {
     await Promise.all([usersQuery.refetch(), rolesQuery.refetch()]);
@@ -284,6 +318,8 @@ export default function Users() {
       password_expiry_days: Number(newUser.password_expiry_days || 90),
       is_active: true,
       roles: [newUser.role_code],
+      ...(newUser.branch_id ? { branch_id: newUser.branch_id } : {}),
+      ...(newUser.location_id ? { location_id: newUser.location_id } : {}),
     });
   }
 
@@ -294,7 +330,7 @@ export default function Users() {
     });
   }
 
-  if (usersQuery.isLoading || rolesQuery.isLoading) {
+  if (usersQuery.isLoading || rolesQuery.isLoading || branchAccessQuery.isLoading) {
     return (
       <div className="flex h-80 items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
@@ -302,12 +338,12 @@ export default function Users() {
     );
   }
 
-  if (usersQuery.isError || rolesQuery.isError) {
+  if (usersQuery.isError || rolesQuery.isError || branchAccessQuery.isError) {
     return (
       <Alert variant="destructive">
         <AlertTitle>Users failed to load</AlertTitle>
         <AlertDescription>
-          {getErrorMessage(usersQuery.error || rolesQuery.error)}
+          {getErrorMessage(usersQuery.error || rolesQuery.error || branchAccessQuery.error)}
         </AlertDescription>
       </Alert>
     );
@@ -472,7 +508,7 @@ export default function Users() {
       </Card>
 
       <Dialog open={isCreateUserOpen} onOpenChange={setIsCreateUserOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-h-[90vh] w-[95vw] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create User Account</DialogTitle>
           </DialogHeader>
@@ -521,6 +557,69 @@ export default function Users() {
                   {roles.map((role) => (
                     <SelectItem key={role.role_code} value={role.role_code}>
                       {role.role_code} - {role.role_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="min-w-0 space-y-2 md:col-span-2">
+              <Label>
+                Operating Branch <span className="text-slate-400">(optional)</span>
+              </Label>
+              <Select
+                value={newUser.branch_id || "none"}
+                onValueChange={(value) =>
+                  setNewUser({
+                    ...newUser,
+                    branch_id: value === "none" ? "" : value,
+                    location_id: "",
+                  })
+                }
+              >
+                <SelectTrigger className="min-w-0">
+                  <SelectValue className="truncate" placeholder="No initial branch" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No initial branch</SelectItem>
+                  {accessBranches.map((branch) => (
+                    <SelectItem key={branch.branch_id} value={branch.branch_id}>
+                      {branch.branch_name} ({branch.branch_code})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="min-w-0 space-y-2 md:col-span-2">
+              <Label>
+                Default Location <span className="text-slate-400">(optional)</span>
+              </Label>
+              <Select
+                value={newUser.location_id || "none"}
+                disabled={!newUser.branch_id}
+                onValueChange={(value) =>
+                  setNewUser({
+                    ...newUser,
+                    location_id: value === "none" ? "" : value,
+                  })
+                }
+              >
+                <SelectTrigger className="min-w-0">
+                  <SelectValue
+                    className="truncate"
+                    placeholder={
+                      newUser.branch_id
+                        ? "No initial location"
+                        : "Select a branch first"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No initial location</SelectItem>
+                  {accessLocations.map((location) => (
+                    <SelectItem key={location.location_id} value={location.location_id}>
+                      {location.location_name} ({location.location_code})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -732,6 +831,35 @@ export default function Users() {
                       </Button>
                     </div>
                   </Can>
+                </CardContent>
+              </Card>
+
+              <Card className="rounded-2xl shadow-sm">
+                <CardHeader className="flex flex-row items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base">Branch &amp; Location Access</CardTitle>
+                    <p className="mt-1 text-sm text-slate-500">Active operating grants and defaults.</p>
+                  </div>
+                  <Can roles={ACTION_ROLES.ASSIGN_ROLE}>
+                    <Button variant="outline" onClick={() => navigate(`/setup?user_id=${encodeURIComponent(displayedSelectedUser.user_id)}`)}>
+                      Manage Branch Access
+                    </Button>
+                  </Can>
+                </CardHeader>
+
+                <CardContent className="space-y-3 text-sm">
+                  <div>
+                    <p className="font-medium">Branches</p>
+                    {selectedUserBranchGrants.length ? selectedUserBranchGrants.map((grant: AnyRecord) => (
+                      <p key={grant.branch_id} className="mt-1">{grant.branch?.branch_name || grant.branch_id} ({grant.branch?.branch_code || "—"}){grant.is_default ? " — Default" : ""}</p>
+                    )) : <p className="mt-1 text-slate-500">No active branch grants.</p>}
+                  </div>
+                  <div>
+                    <p className="font-medium">Locations</p>
+                    {selectedUserLocationGrants.length ? selectedUserLocationGrants.map((grant: AnyRecord) => (
+                      <p key={grant.location_id} className="mt-1">{grant.location?.location_name || grant.location_id} ({grant.location?.location_code || "—"}){grant.is_default ? " — Default" : ""}</p>
+                    )) : <p className="mt-1 text-slate-500">No active location grants.</p>}
+                  </div>
                 </CardContent>
               </Card>
 

@@ -1,5 +1,21 @@
 # Implementation Log
 
+## 2026-09-25 — Phase 8C cash refund/session and date display correction
+
+- Added forward migration 43 with auditable nullable session/till/branch/location fields on `sal.refund_settlement`.
+- Updated refund settlement to require the authenticated operator's OPEN session for CASH refunds when Till Management is enabled.
+- Added one idempotent `CASH_REFUND` movement linked to the refund settlement; non-cash refunds remain financially unchanged and create no till movement.
+- Added a date-only formatter for customer-return calendar dates; timestamp rendering remains timezone-aware elsewhere.
+- Added deterministic Phase 8C regression tests. No deployment or commit performed.
+
+## 2026-09-25 — Customer return VAT journal correction
+
+- Added `database/migrations/phase_42_customer_return_vat_journal_fix.sql`.
+- `sal.post_customer_return` now posts net sales reversal, snapshot Output VAT reversal, gross refund/AR effect, and independent inventory/COGS reversal as one balanced flow.
+- `sal.finalize_customer_return_settlement` now uses snapshot gross value for invoice-linked AR/refund settlement.
+- Removed route-level VAT journal mutation from `POST /api/customer-returns/:id/post`; rollback, EFRIS queueing, and refund/till separation remain intact.
+- Added deterministic customer-return VAT journal tests. No deployment or commit performed.
+
 ## 2026-09-18 — Phase 1 Universal Business Configuration / Branding
 
 - **Status:** Implemented; runtime/API/UI and database validation remain required before approval.
@@ -428,3 +444,129 @@ Added explicit Requesting Branch and Receiving Location controls to InternalStoc
 - Added a `NOT_CONFIGURED` adapter boundary; no URA HTTP/VPN/encryption/signature behavior or secrets were invented.
 - POS posted sales queue fiscal documents from persisted snapshots when EFRIS is enabled; POS credit remains the sole authority and customer returns can queue linked credit notes after an accepted original.
 - Added EFRIS settings, precheck, mappings, document monitor, retry, and clearly-labelled internal mock endpoints/UI.
+
+## Phase 8 Till / cashier sessions — 2026-09-24
+
+- Added migration 41 for company till configuration, branch/location tills, user-till assignments, cashier sessions, cash movements, denomination counts, and POS session/till references.
+- Added disabled-by-default `till_management` feature gating and activation precheck for an active till and cash payment mapping.
+- Added branch-scoped session APIs for open, cash movement, close, variance approval, reconciliation, force-close, till register, and session history.
+- POS now requires an active session only when the feature is enabled; cash sales create drawer movements while non-cash payments do not.
+- Added Till Management UI, Quick Sale session banner/blocker, permissions, deterministic cash-formula tests, and documentation. Migration was applied locally only; manual authenticated acceptance remains pending.
+
+## Phase 8B Till UX and assignment — 2026-09-24
+
+- Reused the existing ERP user, role, branch, and location authorization model; no duplicate cashier authentication was introduced.
+- Added eligible-user and till-assignment APIs with active-user and branch/location validation, plus manager-only opening for another cashier.
+- Improved Till Management with cash/payment account selection, zero-float opening, explicit operator/notes, assignment display, activate/deactivate controls, and clear no-active-till guidance.
+- Setup now presents Till / Cashier Sessions as a manageable feature with activation state and a Manage action to the real Till Management route.
+
+## Phase 8B acceptance defect correction — 2026-09-24
+
+- Traced TILL-01 and Kenneth’s assignment/scope data to matching KAM GRAINS / Clean Beans Store identifiers.
+- Corrected opening-context handling by submitting and validating the operating branch and location explicitly.
+- Added server-side validation for active till, active cashier, branch/location authorization, and `can_open` assignment for ordinary cashiers.
+- Added active assignment aggregation for Till Register and a cashier-specific eligible-till query that excludes conflicting sessions.
+- Separated administrative Till Register/configuration UI from the ordinary cashier’s operational session flow.
+
+## Phase 8B final acceptance fix — 2026-09-25
+
+- Added a minimal operational tax-context endpoint for POS roles and removed Quick Sale’s dependency on administrative tax settings.
+- Preserved administrative permissions for tax settings, tax codes, activation readiness, and tax configuration.
+- Added explicit branch/location open-session payload validation and confirmed TILL-01/Kenneth database scope alignment.
+
+## Phase 8B runtime correction — 2026-09-25
+
+- Added an explicit-context session-opening transaction that validates branch/location/company/till/cashier scope and writes session plus opening movement from the validated till/session dimensions.
+- Hydrated Till Management queries only after authenticated branch/location context is available and added context-aware query keys.
+- Kept API base at `http://localhost:3000/api`; improved login error classification without changing backend port or service configuration.
+
+## Phase 8B zero opening-float correction — 2026-09-25
+
+- Confirmed the existing `till_cash_movement_amount_check` correctly requires positive movement amounts.
+- Corrected zero-float opening to persist the session opening float without inserting a meaningless zero-value movement.
+- Preserved positive opening movements, normal cash movement integrity, negative-float rejection, and transaction rollback behavior.
+
+## Phase 8B/POS parameter correction — 2026-09-25
+
+- Traced the manual Quick Sale failure through `POST /api/pos/sales` to the `sal.pos_sale` insert.
+- Removed the unused `$12` slot and bound active-session `session_id` and `till_id` as UUID placeholders in sequence.
+- Kept fractional quantities, VAT calculation, active-session enforcement, cash-sale drawer movement, transaction rollback, and idempotency unchanged.
+
+## Phase 8B close-session authorization correction — 2026-09-25
+
+- Corrected close authorization to use persisted session company/branch/location/till dimensions rather than treating volatile `req.branchId` as the authority.
+- Added cashier ownership, branch/location authorization, and active `can_close` validation; reconciliation permission remains separate.
+- Preserved counted-cash validation, variance calculation, status workflow, audit fields, and no-new-movement close behavior.
+
+## Phase 8C till ownership and cashier UX
+
+Added a dedicated cashier session endpoint, scoped ordinary session queries to the authenticated cashier, limited `/my-tills` active-session joins to that cashier, protected cash movements and till deactivation, and split the Till Management page into cashier and manager modes. Existing refund integration was preserved.
+## Manager console and Quick Sale resume correction
+
+Restored manager open-session, create/configure, register, assignment, and session-history controls while retaining cashier-only rendering for SALES users. Quick Sale now resumes the authenticated user’s persisted OPEN/CLOSING session from `/my-session`; no silent session creation was added.
+
+## Phase 8D movement accounting
+
+Added migration 44 for Safe/Main Cash configuration, movement idempotency, and journal linkage. Safe Drop now requires configured accounts and posts Dr Safe/Main Cash / Cr Till Cash atomically. Cash Out and Safe Drop are bounded by expected physical cash.
+## Phase 8D runtime correction (2026-09-25)
+
+Corrected the ambiguous POS activity timestamp used by `/my-session`, restored safe existing-till editing, added active CASH payment-account validation, preserved partial-edit mappings, and added the occupied-till empty-state message. No migration, deployment, production write, or commit was performed.
+## 2026-09-25 — Targeted active-session correction
+
+Added the existing-session detail query to the approved manager page, wired register selection to active session inspection, restored force-close action through the existing permissioned endpoint, and kept movement entry conditional on an OPEN selected session. No new subsystem, migration, account-per-cashier model, deployment, or commit was introduced.
+## 2026-09-26 — Phase 8E cash-control account setup
+
+Added forward migration 45 for reusable `TILL-CASH` and `MAIN-SAFE` operational payment-account labels backed by new asset control GL accounts `1110` and `1120`, because `1100` was already Accounts Receivable. Added manager-only payment-account creation alongside existing monitoring, and hardened Safe Drop/Cash In account prechecks and journal directions. Migration applied locally only; no historical balance was moved.
+
+## 2026-09-28 — Phase 8E runtime correction
+
+Separated manager assignment-till state from selected session state, auto-selected the logged-in manager/admin's active session, and added explicit register session selection. Corrected movement locking by locking `app.cashier_session` before loading optional account controls. Added source available-balance precheck, fresh client UUID idempotency keys, permission-aware movement actions, and immediate summary refresh through existing query invalidation. No deployment or commit performed.
+## Phase 8F — cash funding, carry-forward, and handover (2026-09-28)
+
+Added `phase_46_till_cash_carry_forward_handover.sql`, opening-options discovery, Main Safe funding journal transfers, same-till carry-forward, close dispositions, cashier handover proposals/acceptance, and receiving opening-float audit movements. Existing Phase 8E session locking and movement idempotency remain intact.
+## Phase 8F migration alignment and opening-balance verification (2026-09-28)
+
+Confirmed the local runtime/schema mismatch: Phase 46 existed in the workspace but `app.till_cash_handover` and the new `app.cashier_session` columns were absent from `kam_grains_db`. Applied the existing migration transactionally to local development only. Verified active ASSET accounts 1110 and 1120, canonical payment-account mappings, zero available MAIN-SAFE/TILL-CASH balances, preserved historical 1000, existing OPEN sessions, and the unchanged Opening Balances metadata-driven account selector. No redesign, deployment, production change, or commit was performed.
+## Phase 8F/8G combined UI correction (2026-09-28)
+
+Replaced the shared movement interaction with explicit independent Cash In, Cash Out, and Safe Drop rows. Added inline validation, row-specific processing state, success-only reset, failure input preservation, and complete post-success query invalidation. Existing routes, journals, UUID idempotency, backend, and schema were preserved.
+
+## Phase 8G payment-account transfer workflow (2026-09-28)
+
+Added forward migration 47, durable internal transfer records, deterministic transfer numbers, source/destination validation and locking, canonical available-balance checks, automatic balanced GL journals, idempotency, reversal journals, explicit permissions, Payment Account Control transfer UI/history, and documentation. Till Management, Opening Balances, VAT, refunds, and historical 1000 Cash behavior were preserved.
+## 2026-09-29 — Phase 8H branch attribution and reusable reporting
+
+- Added `database/migrations/phase_48_branch_financial_attribution_reporting.sql`.
+- TILL_CASH journal branch attribution now resolves from persisted movement/session dimensions; opening, cash-in, safe-transfer, and handover source rows retain session dimensions.
+- Added branch-performance business-event reporting and daily till-performance movement reporting. Receipts are excluded from sales revenue; cash movements are not profit.
+- Existing posted debit/credit lines are unchanged. No production deployment or commit was performed.
+## 2026-09-30 — Phase 8I-A Expense Voucher hardening
+
+- Inspected the live local `fin.post_expense_voucher_by_no` definition before changes.
+- Confirmed 26 posted vouchers and zero voucher/journal branch mismatches before migration.
+- Added `database/migrations/phase_49_expense_voucher_payment_account_hardening.sql`.
+- Versioned immediate-payment posting with persisted voucher branch, voucher date, controlled Payment Account validation, canonical balance checks, active EXPENSE-line validation, and balanced reversal support.
+- Expense Voucher payment-source selection now uses controlled Payment Account rows and channel metadata. Cashbook now includes active controlled payment accounts and classifies internal transfers separately.
+- Phase 49 was applied only to local development `kam_grains_db`. No Petty Cash funding, cross-branch settlement, deployment, or commit was performed.
+
+Phase 8L UX correction adds optional initial Operating Branch and Default Location fields to the existing Users & Roles create modal. The backend atomically creates the user, initial role, optional grants/defaults, and business audit events. Existing Branch & Location Access remains authoritative for later changes.
+
+Phase 8L acceptance hardening adds responsive create-user controls, active grant visibility in Manage User, a preselected link into authoritative Branch & Location Access, and branch-scoped operational till register filtering. No migration was required.
+# Phase 8L till eligibility correction
+
+Changed the till eligibility endpoint and Till Management queries to use the selected persisted till scope. Added cashier-role and optional assignment/can_open filtering. Till creation now validates authorized branch/location context. No schema migration was required.
+# Phase 8M management target
+
+Added `managementScope.service.js`, the management branch endpoint, Till Management target selectors, target-aware register/session/create/force-close paths, and HEAD_OFFICE till permissions. No migration was required.
+
+Phase 8M acceptance correction aligned Quick Sale session discovery with My Till, preserved cashier-vs-opened-by semantics, and added operating-location scope to Dashboard stock cards. No master data was changed.
+
+Phase 8N added branch-targeted Setup location listing and editing, central create authorization, saleability/status display, safe deactivation guards, and atomic location audit events. No migration was required because the operational location columns already existed.
+
+Phase 8N acceptance correction added forward migration 54 (`phase_54_expand_audit_event_actions.sql`) after inspecting the original constraint. User-location access now performs business update and audit insert in one transaction; known validation messages remain specific and unexpected failures return a safe generic message. Branch/location selectors now use responsive columns with constrained, discoverable long labels.
+
+Phase 8N UI acceptance correction replaced the undeclared `managementBranch` references with the existing `managedBranch` derived selection, added guarded management-branch/location empty states, made location management discoverable as `Branches & Locations`, and refetched the management branch list after location saves. No schema or backend behavior changed.
+
+Phase 8O-A added POS cash-movement journal linkage and source fallback display, labels POS activity distinctly from the corresponding cash movement, and changed cashier close UX to use the supported `CARRY_FORWARD` disposition rather than silently requesting manager-only `LEAVE_IN_TILL`. Close/open success messages now identify the session.
+
+Phase 8O-A2 aligned central Till Management to an explicit management branch/location. Admin manager mode no longer seeds its active-session panel from the administrator's own operating-context session; session history, detail, force-close, cash movements, assignments, eligible users, and opening options are target-authorized. No migration, deployment, or production change was required.

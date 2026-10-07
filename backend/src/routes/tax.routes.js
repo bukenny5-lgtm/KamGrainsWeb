@@ -17,6 +17,14 @@ router.get("/settings", requirePermission("VIEW_TAX_CONFIGURATION"), async (req,
   } catch (error) { res.status(500).json({ success: false, message: "Failed to load tax settings.", error: error.message }); }
 });
 
+router.get("/operational-context", requirePermission("VIEW_TAX_OPERATIONAL"), async (req, res) => {
+  try {
+    const companyId = await getActiveCompanyId();
+    const result = await query("SELECT tax_engine_enabled,tax_pricing_mode FROM app.company_profile WHERE company_id=$1", [companyId]);
+    res.json({ success: true, data: result.rows[0] || { tax_engine_enabled: false, tax_pricing_mode: "TAX_EXCLUSIVE" } });
+  } catch (error) { res.status(500).json({ success: false, message: "Failed to load operational tax context.", error: error.message }); }
+});
+
 router.get("/activation-precheck", requirePermission("VIEW_TAX_CONFIGURATION"), async (req, res) => {
   try {
     const companyId = await getActiveCompanyId();

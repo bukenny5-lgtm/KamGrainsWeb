@@ -15,6 +15,7 @@ async function safeQuery(sql, params) {
 /** GET /api/dashboard/summary */
 router.get("/summary", requirePermission("VIEW_ONLY"), async (req, res) => {
   const branchId = req.branchId;
+  const locationId = req.query.location_id || req.headers["x-location-id"] || null;
   // The context middleware prefers the branch header. Reject contradictory
   // query/header values instead of silently showing data for a different branch.
   if (req.query.branch_id && String(req.query.branch_id) !== String(branchId)) {
@@ -47,8 +48,8 @@ router.get("/summary", requirePermission("VIEW_ONLY"), async (req, res) => {
                COALESCE(SUM(soh.qty_on_hand),0) AS total_stock_qty
         FROM inv.v_stock_on_hand soh
         JOIN app.location loc ON loc.location_id=soh.location_id
-        WHERE loc.branch_id=$1 AND loc.is_active AND loc.is_stock_holding AND loc.is_saleable;
-      `, [branchId]),
+        WHERE loc.branch_id=$1 AND ($2::uuid IS NULL OR loc.location_id=$2) AND loc.is_active AND loc.is_stock_holding AND loc.is_saleable;
+      `, [branchId, locationId]),
 
       safeQuery(`
         SELECT soh.product_id,soh.sku,soh.product_name,
@@ -57,11 +58,11 @@ router.get("/summary", requirePermission("VIEW_ONLY"), async (req, res) => {
                COUNT(DISTINCT soh.location_id) AS location_count
         FROM inv.v_stock_on_hand soh
         JOIN app.location loc ON loc.location_id=soh.location_id
-        WHERE loc.branch_id=$1 AND loc.is_active AND loc.is_stock_holding AND loc.is_saleable
+        WHERE loc.branch_id=$1 AND ($2::uuid IS NULL OR loc.location_id=$2) AND loc.is_active AND loc.is_stock_holding AND loc.is_saleable
         GROUP BY soh.product_id,soh.sku,soh.product_name
         ORDER BY soh.product_name
         LIMIT 12;
-      `, [branchId]),
+      `, [branchId, locationId]),
 
       safeQuery(`
         SELECT COALESCE(SUM(COALESCE(ail.sell_qty,ail.qty,ail.base_qty,0)*COALESCE(ail.unit_price,0)),0) AS total_sales,

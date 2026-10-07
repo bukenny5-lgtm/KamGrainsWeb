@@ -16,6 +16,7 @@ export const BUSINESS_FEATURE_FALLBACK: BusinessFeatures = {
   MULTI_LOCATION: false,
   tax_engine: false,
   efris: false,
+  till_management: false,
 };
 
 export function useBusinessFeatures() {

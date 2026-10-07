@@ -123,14 +123,38 @@ export async function getEfrisDocuments() { return (await api.get("/efris/docume
 export async function saveEfrisMapping(kind: string, payload: ApiPayload) { return (await api.post(`/efris/mappings/${encode(kind)}`, payload)).data; }
 export async function internalMockEfrisSubmit(id: string, outcome: string = "ACCEPT") { return (await api.post(`/efris/documents/${encode(id)}/internal-mock-submit`, { outcome })).data; }
 
+export async function getTillConfig() { return (await api.get("/till-management/config")).data; }
+export async function updateTillConfig(payload: ApiPayload) { return (await api.patch("/till-management/config", payload)).data; }
+export async function getManagementBranches() { return (await api.get("/branches/management")).data; }
+export async function getTills(managementBranchId?: string, managementLocationId?: string) { return (await api.get("/till-management/tills", { params: { management_branch_id: managementBranchId, management_location_id: managementLocationId || undefined } })).data; }
+export async function getTillAssignmentSummary() { return (await api.get("/till-management/till-assignment-summary")).data; }
+export async function getMyTills(locationId: string) { return (await api.get("/till-management/my-tills", { params: { location_id: locationId } })).data; }
+export async function getTillEligibleUsers(tillId: string, requireAssignment = false, managementBranchId?: string, managementLocationId?: string) { return (await api.get("/till-management/eligible-users", { params: { till_id: tillId, require_assignment: requireAssignment, management_branch_id: managementBranchId, management_location_id: managementLocationId } })).data; }
+export async function getTillAssignments(tillId: string, managementBranchId?: string, managementLocationId?: string) { return (await api.get(`/till-management/tills/${encode(tillId)}/assignments`, { params: { management_branch_id: managementBranchId, management_location_id: managementLocationId } })).data; }
+export async function assignTillUser(tillId: string, payload: ApiPayload, managementBranchId?: string, managementLocationId?: string) { return (await api.post(`/till-management/tills/${encode(tillId)}/assignments`, payload, { params: { management_branch_id: managementBranchId, management_location_id: managementLocationId } })).data; }
+export async function createTill(payload: ApiPayload) { return (await api.post("/till-management/tills", payload)).data; }
+export async function updateTill(id: string, payload: ApiPayload) { return (await api.patch(`/till-management/tills/${encode(id)}`, payload)).data; }
+export async function getTillSessions(managementBranchId?: string, managementLocationId?: string) { return (await api.get("/till-management/sessions", { params: { management_branch_id: managementBranchId, management_location_id: managementLocationId || undefined } })).data; }
+export async function getTillSession(id: string, managementBranchId?: string, managementLocationId?: string) { return (await api.get(`/till-management/sessions/${encode(id)}`, { params: { management_branch_id: managementBranchId, management_location_id: managementLocationId } })).data; }
+export async function getTillOpeningOptions(tillId: string, managementBranchId?: string, managementLocationId?: string) { return (await api.get("/till-management/opening-options", { params: { till_id: tillId, management_branch_id: managementBranchId, management_location_id: managementLocationId } })).data; }
+export async function getActiveTillSession() { return (await api.get("/till-management/sessions/active")).data; }
+export async function getMyTillSession() { return (await api.get("/till-management/my-session")).data; }
+export async function openTillSession(payload: ApiPayload) { return (await api.post("/till-management/sessions/open", payload)).data; }
+export async function closeTillSession(id: string, payload: ApiPayload) { return (await api.post(`/till-management/sessions/${encode(id)}/close`, payload)).data; }
+export async function acceptTillHandover(id: string, payload: ApiPayload) { return (await api.post(`/till-management/handovers/${encode(id)}/accept`, payload)).data; }
+export async function forceCloseTillSession(id: string, payload: ApiPayload, managementBranchId?: string, managementLocationId?: string) { return (await api.post(`/till-management/sessions/${encode(id)}/force-close`, payload, { params: { management_branch_id: managementBranchId, management_location_id: managementLocationId } })).data; }
+export async function addTillCashMovement(id: string, payload: ApiPayload, managementBranchId?: string, managementLocationId?: string) { return (await api.post(`/till-management/sessions/${encode(id)}/movements`, payload, { params: { management_branch_id: managementBranchId, management_location_id: managementLocationId } })).data; }
+export async function approveTillSession(id: string) { return (await api.post(`/till-management/sessions/${encode(id)}/approve`)).data; }
+export async function reconcileTillSession(id: string) { return (await api.post(`/till-management/sessions/${encode(id)}/reconcile`)).data; }
+
 export async function updateBusinessFeatures(payload: UpdateBusinessFeaturesPayload): Promise<BusinessFeaturesResponse> {
   const response = await api.patch("/business-features", payload);
   return response.data;
 }
 
-export async function getDashboardSummary(branchId?: string) {
+export async function getDashboardSummary(branchId?: string, locationId?: string) {
   const response = await api.get("/dashboard/summary", {
-    ...(branchId ? { params: { branch_id: branchId }, headers: { "x-branch-id": branchId } } : {}),
+    ...(branchId ? { params: { branch_id: branchId, location_id: locationId || undefined }, headers: { "x-branch-id": branchId, ...(locationId ? { "x-location-id": locationId } : {}) } } : {}),
   });
   return response.data;
 }
@@ -466,6 +490,11 @@ export async function getTaxSettings() {
   return response.data;
 }
 
+export async function getOperationalTaxContext() {
+  const response = await api.get("/tax/operational-context");
+  return response.data;
+}
+
 export async function getTaxActivationPrecheck() {
   const response = await api.get("/tax/activation-precheck");
   return response.data;
@@ -666,6 +695,11 @@ export async function getPaymentAccountControl() {
   return response.data;
 }
 
+export async function getAvailablePaymentAccountGlAccounts() {
+  const response = await api.get("/payment-accounts/available-gl-accounts");
+  return response.data;
+}
+
 export async function createPaymentAccountControl(payload: ApiPayload) {
   const response = await api.post("/payment-accounts", payload);
   return response.data;
@@ -692,6 +726,36 @@ export async function testPaymentAccountCanPay(
     "/payment-accounts/test-can-pay",
     accountIdOrPayload
   );
+  return response.data;
+}
+
+export async function getPaymentTransferAccounts(branchId?: string) {
+  const response = await api.get("/payment-account-transfers/accounts", { params: branchId ? { branch_id: branchId } : undefined });
+  return response.data;
+}
+
+export async function getPaymentAccountTransfers() {
+  const response = await api.get("/payment-account-transfers");
+  return response.data;
+}
+
+export async function createPaymentAccountTransfer(payload: ApiPayload) {
+  const response = await api.post("/payment-account-transfers", payload);
+  return response.data;
+}
+
+export async function voidPaymentAccountTransfer(id: string, payload: ApiPayload) {
+  const response = await api.post(`/payment-account-transfers/${encode(id)}/void`, payload);
+  return response.data;
+}
+
+export async function createCrossBranchTransfer(payload: ApiPayload) {
+  const response = await api.post("/payment-account-transfers/cross-branch", payload);
+  return response.data;
+}
+
+export async function crossBranchTransferAction(id: string, action: string, payload: ApiPayload = {}) {
+  const response = await api.post(`/payment-account-transfers/${encode(id)}/${action}`, payload);
   return response.data;
 }
 
@@ -1292,6 +1356,14 @@ export async function postExpenseVoucher(
   const response = await api.post(
     `/finance/expense-vouchers/${encode(voucherNo)}/post`,
     payload
+  );
+  return response.data;
+}
+
+export async function voidExpenseVoucher(voucherNo: string, reason: string) {
+  const response = await api.post(
+    `/finance/expense-vouchers/${encode(voucherNo)}/void`,
+    { reason }
   );
   return response.data;
 }

@@ -34,6 +34,7 @@ import AccruedExpenses from "@/pages/AccruedExpenses";
 import StockAdjustments from "@/pages/StockAdjustments";
 import ApiPaymentChannels from "@/pages/ApiPaymentChannels";
 import Efris from "@/pages/Efris";
+import TillManagement from "@/pages/TillManagement";
 import Reconciliations from "@/pages/Reconciliations";
 import PosQuickSale from "@/pages/PosQuickSale";
 import CustomerReturns from "@/pages/CustomerReturns";
@@ -235,6 +236,14 @@ const router = createBrowserRouter([
         element: (
           <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.FINANCE_ACCESS)}>
             <Efris />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "tills",
+        element: (
+          <ProtectedRoute allowedRoles={roleList(ROLE_GROUPS.POS_ACCESS)}>
+            <TillManagement />
           </ProtectedRoute>
         ),
       },

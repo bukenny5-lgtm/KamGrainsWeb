@@ -153,3 +153,7 @@ Phase 39 reuses the existing API Payment Channels register and adds provider-neu
 ### Phase 7 — Uganda EFRIS adapter foundation
 
 Migration 40 and the EFRIS Compliance page add independent configuration, readiness prechecks, verified mapping layers, durable fiscal documents/events/attempts, POS queueing, and return credit-note linkage. Real URA transport remains blocked pending official technical onboarding and is represented by `NOT_CONFIGURED`; internal mock behavior is never called URA sandbox.
+
+### Phase 8 — Till / cashier session management
+
+Migration 41 and the Till Management page add disabled-by-default branch/location-scoped tills, cashier sessions, cash movements, opening/closing/variance controls, permissions, audit fields, and conditional POS enforcement. Manual physical till acceptance, final cash-transfer accounting policy, return/refund cash integration, and full assignment administration remain required before operational activation.

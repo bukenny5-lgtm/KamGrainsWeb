@@ -84,6 +84,21 @@ router.patch(
         }
       }
 
+      if (updates.till_management === true) {
+        const tillCheck = await client.query(`
+          SELECT
+            EXISTS (SELECT 1 FROM app.till WHERE company_id=$1 AND is_active AND branch_id IS NOT NULL AND location_id IS NOT NULL) AS has_till,
+            EXISTS (SELECT 1 FROM app.till WHERE company_id=$1 AND is_active AND cash_payment_account_id IS NOT NULL) AS has_cash_mapping;`, [companyId]);
+        const checks = tillCheck.rows[0];
+        if (!checks?.has_till || !checks?.has_cash_mapping) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ success: false, message: "Till Management activation precheck failed.", checks: [
+            { check_code: "ACTIVE_TILL", is_valid: Boolean(checks?.has_till), message: "Create at least one active till with branch and location." },
+            { check_code: "CASH_MAPPING", is_valid: Boolean(checks?.has_cash_mapping), message: "Map an active till to an existing cash payment account." },
+          ] });
+        }
+      }
+
       const previous = await client.query(
         `SELECT feature_code, is_enabled FROM app.company_feature WHERE company_id = $1 AND feature_code = ANY($2::text[])`,
         [companyId, codes]

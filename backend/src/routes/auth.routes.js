@@ -24,6 +24,21 @@ function signToken(user, roles) {
   });
 }
 
+async function operatingContext(userId) {
+  const result = await query(`
+    SELECT ub.branch_id, b.branch_code, b.branch_name,
+           ul.location_id, l.location_code, l.location_name
+    FROM sec.user_branch ub
+    JOIN app.branch b ON b.branch_id=ub.branch_id AND b.is_active
+    LEFT JOIN sec.user_location ul
+      ON ul.user_id=ub.user_id AND ul.is_active AND ul.is_default
+    LEFT JOIN app.location l
+      ON l.location_id=ul.location_id AND l.branch_id=ub.branch_id AND l.is_active
+    WHERE ub.user_id=$1 AND ub.is_active AND ub.is_default
+    LIMIT 1`, [userId]);
+  return result.rows[0] || null;
+}
+
 function calculatePasswordStatus(user) {
   const expiryDays = Number(user.password_expiry_days || 0);
 
@@ -122,6 +137,7 @@ router.post("/login", async (req, res) => {
     const roles = rolesResult.rows;
     const passwordStatus = calculatePasswordStatus(user);
     const token = signToken(user, roles);
+    const context = await operatingContext(user.user_id);
 
     return res.json({
       success: true,
@@ -137,6 +153,7 @@ router.post("/login", async (req, res) => {
         must_change_password: passwordStatus.must_change_password,
         password_expired: passwordStatus.password_expired,
         roles,
+        operating_context: context,
       },
     });
   } catch (error) {

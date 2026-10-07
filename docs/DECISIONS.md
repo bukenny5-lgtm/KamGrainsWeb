@@ -1,5 +1,12 @@
 # Architecture Decision Record Log
 
+## Phase 8C — Cash refund ownership and date semantics — 2026-09-25
+
+- A cash refund belongs to the active session that physically pays it, never the original sale session. The refund settlement stores the paying session snapshot for auditability.
+- Till Management enabled: CASH refund requires an OPEN session for the authenticated operator in the active company. No new shortage/overage blocking policy is introduced; negative expected cash remains a separate configurable control.
+- MOBILE_MONEY, CARD, and BANK_TRANSFER refunds do not affect till cash.
+- PostgreSQL `DATE` values are calendar dates, not timestamps; Return Details must render them without timezone conversion. Timestamp fields retain normal timezone-aware formatting.
+
 ## ADR-0001 — KAM GRAINS as Reference Tenant
 - **Date:** 2026-09-17
 - **Status:** Accepted
@@ -300,3 +307,75 @@
 - EFRIS remains outside the generic ERP core and tax engine. The independent `efris` feature/configuration is disabled by default and activation requires a server-side readiness precheck.
 - POS is the fiscal authority for POS credit sales; generated AR invoices are not duplicated. Posted returns link to the original accepted fiscal document and queue a credit note using immutable return tax snapshots.
 - Without official URA technical documentation, only a durable queue, adapter contract, mapping/readiness model, and explicitly-labelled internal mock are implemented.
+
+## ADR-0024 — Till sessions as the cash-control boundary
+
+- The till session is the operational boundary for physical cash. POS sales attach to the active server-selected session only when `till_management` is enabled.
+- Expected cash is derived from immutable movement rows, while non-cash payment methods remain outside drawer arithmetic. This keeps payment-channel settlement separate from physical cash custody.
+- Session operations are branch/location scoped and protected by dedicated permissions, partial uniqueness constraints, audit fields, and variance approval states.
+
+## ADR-0025 — Existing ERP users are cashier identities
+
+- Cashiers are existing `sec.app_user` records with normal ERP authentication, role permissions, branch/location authorization, and optional `sec.user_till` assignments.
+- Opening for another cashier is an admin/manager operation only. `cashier_user_id` is the operational owner; `opened_by` is the audit actor and may differ.
+- Opening float accepts zero and is explicitly entered; prior closing cash is never silently reused as authoritative opening float.
+
+## ADR-0026 — Opening context and cashier eligibility authority
+
+- The operating branch/location is part of the open-session request and is validated server-side against the selected till and cashier authorization records. Frontend labels are never authoritative.
+- Ordinary cashiers see only active tills assigned to them with `can_open=true` and no conflicting active session. Manager-level users may open a configured till for an authorized cashier without creating a redundant assignment solely for the manager.
+- Active `sec.user_till` rows are the sole assignment source; Till Register summaries and cashier eligibility queries derive from that table.
+
+## Phase 8C decisions
+
+- Till != assignment != session.
+- Login and refresh resume persisted OPEN/CLOSING sessions; login never silently opens one.
+- Cashier reads/actions are authenticated-user scoped; manager actions require existing permissions and branch/location authority.
+- Deactivate means disable the configured till and is refused while an active session remains.
+## Regression correction decisions
+
+- Manager console capability is separated from cashier rendering; cashier isolation is not achieved by removing manager functionality.
+- Quick Sale uses `/my-session`, scoped by authenticated user and operating branch/location.
+- Existing persisted sessions are resumed; no session is created on login or page load.
+
+## Phase 8D decisions
+
+- Safe Drop is a cash transfer, never an expense or revenue entry.
+- Safe Drop requires configured Till Cash and Safe/Main Cash accounts.
+- Generic Cash Out remains operational until an approved purpose-account policy exists.
+- Movement idempotency is session-scoped and durable.
+## ADR-0027 — Cash-account architecture
+
+CASHIER != TILL != PAYMENT ACCOUNT != GL ACCOUNT. A cashier is an operator/session identity; a till is a physical drawer/register; a payment account is an operational cash-control record; and a GL account is the financial control account. Till/session detail remains in `app.till`, `app.cashier_session`, and `app.till_cash_movement`. No account-per-cashier design is introduced. Multiple tills may share one Till Cash control GL account; Safe Drop transfers Dr Main Cash Safe / Cr Cash in Tills, while Safe Cash In reverses that direction.
+
+Phase 8H architectural rule: branch-operational financial journals inherit branch from the persisted source transaction/session. Volatile request or UI branch context may authorize access but must never be the accounting source. NULL branch remains reserved for legitimate company-wide journals.
+
+Phase 8I-A applies the same rule to Expense Vouchers. Immediate vouchers debit active EXPENSE GL accounts and credit active controlled Payment Account GLs. Payment Account Control remains the balance authority; future Petty Cash is deferred until branch ownership and reconciliation are designed.
+## Phase 8E cash-control architecture decision
+
+## Phase 8E runtime decisions
+
+Opening float remains an operational session movement and is not automatically double-posted as a Safe/Main Cash transfer. Existing opening balances, approved finance journals, or the existing payment-account transfer workflow are the permitted ways to establish Main Safe funding. Cash In is allowed only when the source account's existing negative-balance policy permits the resulting balance.
+
+`CASHIER != TILL != PAYMENT ACCOUNT != GL ACCOUNT`. Cashiers are operators, tills are physical drawers, payment accounts are operational control records, and GL accounts are financial controls. Multiple tills may share `TILL-CASH`; no GL or payment account is created per cashier or automatically per till. Because the current schema makes payment-account `account_id` the linked GL key, operational names use the existing provider/label field.
+## Phase 8F decisions (2026-09-28)
+
+- Main Safe funding is a balanced `1120` to `1110` journal, not a historical `1000` migration.
+- Carry-forward is a same-till session-source relationship and does not create a duplicate GL transfer.
+- Cashier handover is proposal/acceptance workflow; acceptance requires an OPEN receiving session and records one opening movement.
+- A variance requiring approval blocks disposition application until approval.
+## Phase 8G decisions (2026-09-28)
+
+- Internal payment-account transfers use a durable transfer header and automatic `Dr destination / Cr source` journal; users do not enter debit/credit lines.
+- The first supported channel combinations are CASH→CASH, CASH→BANK, and BANK→CASH.
+- Transfer workflow is separate from Opening Balance and Till Cash Movement.
+- Posted transfers are retained; void creates a linked reversal journal. Historical 1000 Cash is never migrated automatically.
+
+- Phase 8J reuses `audit.event` for business events rather than creating a second audit store. Row-level records remain forensic; business events are the human-readable layer; journals remain accounting truth.
+# Phase 8M decision
+
+Use a module-local management target rather than changing the authenticated user's operating context. Server-side scope resolution validates company, active branch, active location, and grants; central ADMIN/HEAD_OFFICE users may target active company branches.
+
+# Phase 8N decision
+
+Use the existing management scope service for Branches & Locations. Location deactivation is a guarded state change, not deletion, and saleability is independently configurable only while the location remains active.

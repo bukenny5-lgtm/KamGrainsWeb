@@ -277,17 +277,6 @@ router.post("/:id/post", requireAuth, requirePermission("POST_CUSTOMER_RETURN"),
     await client.query("BEGIN");
     await setDatabaseUserContext(client, req);
     const result = await client.query("SELECT sal.post_customer_return($1::uuid) AS customer_return_id", [returnId]);
-    const tax = await client.query(`SELECT r.return_no,r.posted_journal_id,COALESCE(SUM(l.returned_taxable_amount),0) AS net_amount,
-      COALESCE(SUM(l.returned_tax_amount),0) AS tax_amount,COALESCE(SUM(l.returned_gross_amount),0) AS gross_amount
-      FROM sal.customer_return r JOIN sal.customer_return_line l ON l.customer_return_id=r.customer_return_id
-      WHERE r.customer_return_id=$1 GROUP BY r.return_no,r.posted_journal_id`, [returnId]);
-    if (tax.rows[0] && Number(tax.rows[0].tax_amount) > 0) {
-      const account = await client.query("SELECT output_vat_account_id FROM app.company_profile WHERE is_active ORDER BY created_at,company_id LIMIT 1");
-      if (!account.rows[0]?.output_vat_account_id) throw new Error("Output VAT Payable account is not configured.");
-      await client.query("UPDATE fin.gl_journal_line SET debit=$2, credit=0 WHERE journal_id=$1 AND memo=$3", [tax.rows[0].posted_journal_id, tax.rows[0].net_amount, `Sales return ${tax.rows[0].return_no}`]);
-      await client.query("INSERT INTO fin.gl_journal_line(journal_id,account_id,party_id,memo,debit,credit) VALUES($1,$2,NULL,$3,$4,0)", [tax.rows[0].posted_journal_id, account.rows[0].output_vat_account_id, `Output VAT reversal ${tax.rows[0].return_no}`, tax.rows[0].tax_amount]);
-      await client.query("SELECT fin.assert_balanced($1::uuid)", [tax.rows[0].posted_journal_id]);
-    }
     await queueEfrisCreditNoteForReturn(client, returnId, req.user?.user_id || null);
     await client.query("COMMIT");
     return res.json({ success: true, customer_return_id: result.rows[0]?.customer_return_id, message: "Customer return posted." });

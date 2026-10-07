@@ -109,12 +109,13 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const operating = useOperatingContext();
   const branchId = operating.currentBranch?.branch_id || "";
+  const locationId = operating.currentLocation?.location_id || "";
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
-    queryKey: ["dashboard-summary", branchId],
-    queryFn: () => getDashboardSummary(branchId),
-    enabled: Boolean(branchId),
+    queryKey: ["dashboard-summary", branchId, locationId],
+    queryFn: () => getDashboardSummary(branchId, locationId),
+    enabled: Boolean(branchId && locationId),
   });
 
   async function handleRefresh() {

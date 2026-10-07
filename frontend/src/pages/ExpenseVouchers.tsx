@@ -20,8 +20,10 @@ import {
   getExpenseVoucherByNo,
   getExpenseVouchers,
   getFinanceGlAccounts,
+  getPaymentAccounts,
   getParties,
   postExpenseVoucher,
+  voidExpenseVoucher,
 } from "@/api/client";
 import { downloadXlsx } from "@/lib/excelExport";
 
@@ -475,6 +477,11 @@ export default function ExpenseVouchers() {
     queryFn: getFinanceGlAccounts,
   });
 
+  const paymentAccountsQuery = useQuery({
+    queryKey: ["controlled-payment-accounts-for-expense-vouchers"],
+    queryFn: getPaymentAccounts,
+  });
+
   const detailQuery = useQuery({
     queryKey: ["expense-voucher-detail", selectedVoucherNo],
     queryFn: () => getExpenseVoucherByNo(selectedVoucherNo as string),
@@ -501,48 +508,28 @@ export default function ExpenseVouchers() {
     },
   });
 
+  const voidMutation = useMutation({
+    mutationFn: ({ voucherNoToVoid, reason }: { voucherNoToVoid: string; reason: string }) =>
+      voidExpenseVoucher(voucherNoToVoid, reason),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["expense-vouchers"] });
+      await queryClient.invalidateQueries({ queryKey: ["expense-voucher-detail", selectedVoucherNo] });
+      setLastRefreshed(new Date());
+    },
+  });
+
   const vouchers: AnyRecord[] = normalizeArray(vouchersQuery.data, ["data"]);
   const parties: AnyRecord[] = normalizeArray(partiesQuery.data, [
     "parties",
     "data",
   ]);
   const accounts: AnyRecord[] = normalizeArray(accountsQuery.data, ["data"]);
-
-  const paymentAccounts = accounts.filter((account) => {
-    const type = String(account.account_type || "").toUpperCase();
-    return (
-      account.is_active !== false &&
-      ["ASSET", "CASH", "BANK"].some((x) => type.includes(x))
-    );
-  });
+  const paymentAccounts: AnyRecord[] = normalizeArray(paymentAccountsQuery.data, ["data"])
+    .filter((account: AnyRecord) => account.is_active !== false && account.is_payment_account === true);
 const suggestedPaymentAccount = useMemo(() => {
   const method = String(paymentMethod || "").toUpperCase();
-
-  if (method === "CASH") {
-    return paymentAccounts.find(
-      (account) =>
-        String(account.account_code) === "1000" ||
-        String(account.account_name || "").toUpperCase().includes("CASH")
-    );
-  }
-
-  if (method === "BANK" || method === "CHEQUE") {
-    return paymentAccounts.find(
-      (account) =>
-        String(account.account_code) === "1010" ||
-        String(account.account_name || "").toUpperCase().includes("BANK")
-    );
-  }
-
-  if (method === "MOBILE_MONEY") {
-    return paymentAccounts.find(
-      (account) =>
-        String(account.account_code) === "1020" ||
-        String(account.account_name || "").toUpperCase().includes("MOBILE MONEY")
-    );
-  }
-
-  return null;
+  const channel = method === "CHEQUE" ? "BANK" : method;
+  return paymentAccounts.find((account: AnyRecord) => String(account.channel_type || "").toUpperCase() === channel) || null;
 }, [paymentAccounts, paymentMethod]);
 
 useEffect(() => {
@@ -622,6 +609,13 @@ useEffect(() => {
   async function handleRefresh() {
     await vouchersQuery.refetch();
     setLastRefreshed(new Date());
+  }
+
+  async function handleVoidVoucher() {
+    if (!selectedVoucherNo || !detailData?.posted_journal_id || String(detailData.status).toUpperCase() !== "POSTED") return;
+    const reason = window.prompt("Reason for voiding this posted expense voucher:")?.trim();
+    if (!reason) return;
+    await voidMutation.mutateAsync({ voucherNoToVoid: selectedVoucherNo, reason });
   }
 
   async function handleExportExcel() {
@@ -949,6 +943,7 @@ useEffect(() => {
                   <TableHead className="text-right">Lines</TableHead>
                   <TableHead className="text-right">Total Amount</TableHead>
                   <TableHead>Journal ID</TableHead>
+                  <TableHead>Reversal</TableHead>
                   <TableHead>Created At</TableHead>
                   <TableHead className="text-right">Action</TableHead>
                 </TableRow>
@@ -957,7 +952,7 @@ useEffect(() => {
               <TableBody>
                 {filteredRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={12} className="h-24 text-center">
+                    <TableCell colSpan={13} className="h-24 text-center">
                       No expense vouchers found.
                     </TableCell>
                   </TableRow>
@@ -988,8 +983,9 @@ useEffect(() => {
                         {formatMoney(row.total_amount)}
                       </TableCell>
                       <TableCell className="max-w-40 truncate text-xs">
-                        {row.posted_journal_id || "-"}
+                        {row.posted_journal_no || row.posted_journal_id || "-"}
                       </TableCell>
+                      <TableCell className="max-w-40 truncate text-xs">{row.reversal_journal_no || row.reversal_journal_id || "-"}</TableCell>
                       <TableCell>{formatDateTime(row.created_at)}</TableCell>
                       <TableCell className="text-right">
                         <Button
@@ -1078,7 +1074,7 @@ useEffect(() => {
                           key={account.account_id}
                           value={account.account_id}
                         >
-                          {account.account_code} - {account.account_name}
+                          {account.account_code} - {account.account_name} / {account.channel_type}
                         </SelectItem>
                       ))
                     )}
@@ -1333,6 +1329,19 @@ useEffect(() => {
                       Post Voucher
                     </Button>
                   </Can>
+                  <Can roles={ACTION_ROLES.VOID_EXPENSE_VOUCHER}>
+                    <Button
+                      variant="destructive"
+                      onClick={handleVoidVoucher}
+                      disabled={
+                        voidMutation.isPending ||
+                        String(detailData.status || "").toUpperCase() !== "POSTED" ||
+                        !detailData.posted_journal_id
+                      }
+                    >
+                      {voidMutation.isPending ? "Voiding..." : "Void Voucher"}
+                    </Button>
+                  </Can>
                 </div>
               </div>
 
@@ -1384,8 +1393,11 @@ useEffect(() => {
                 />
                 <InfoBox
                   label="Journal ID"
-                  value={detailData.posted_journal_id || "-"}
+                  value={detailData.posted_journal_no || detailData.posted_journal_id || "-"}
                 />
+                <InfoBox label="Reversal Journal" value={detailData.reversal_journal_no || detailData.reversal_journal_id || "-"} />
+                <InfoBox label="Reversed By / At" value={detailData.voided_at ? `${detailData.reversed_by_name || "-"} · ${formatDateTime(detailData.voided_at)}` : "-"} />
+                <div className="md:col-span-4"><InfoBox label="Void / Reversal Reason" value={detailData.void_reason || "-"} /></div>
                 <InfoBox
                   label="Posted At"
                   value={formatDateTime(detailData.posted_at)}

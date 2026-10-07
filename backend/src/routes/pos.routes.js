@@ -89,6 +89,10 @@ async function loadSaleById(saleId) {
       ps.transaction_date,
       ps.sale_ts,
       ps.location_id,
+      ps.session_id,
+      ps.till_id,
+      cs.session_no,
+      t.till_code,
       loc.location_name,
       ps.customer_id,
       customer.party_name AS customer_name,
@@ -149,6 +153,8 @@ async function loadSaleById(saleId) {
       ), '[]'::json) AS lines
     FROM sal.pos_sale ps
     JOIN app.location loc ON loc.location_id = ps.location_id
+    LEFT JOIN app.cashier_session cs ON cs.session_id = ps.session_id
+    LEFT JOIN app.till t ON t.till_id = ps.till_id
     LEFT JOIN app.party customer ON customer.party_id = ps.customer_id
     LEFT JOIN sec.app_user u ON u.user_id = ps.created_by
     WHERE ps.pos_sale_id = $1;`,
@@ -437,6 +443,27 @@ router.post(
         return res.status(409).json({ success: false, message: "An active POS location is required." });
       }
 
+      const companyId = await getActiveCompanyId();
+      const featureMap = await resolveBusinessFeatureMap(companyId);
+      let activeTillSession = null;
+      if (featureMap.till_management) {
+        const sessionResult = await client.query(`
+          SELECT s.session_id, s.till_id, s.branch_id, s.location_id, s.session_no
+          FROM app.cashier_session s
+          WHERE s.company_id=$1 AND s.cashier_user_id=$2 AND s.branch_id=$3 AND s.location_id=$4
+            AND s.status='OPEN'
+          ORDER BY s.opened_at DESC LIMIT 1`, [companyId, req.user?.user_id, req.branchId, locationId]);
+        if (!sessionResult.rowCount) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ success: false, message: "No active till session. Open a till before processing sales." });
+        }
+        activeTillSession = sessionResult.rows[0];
+        if (body.session_id && body.session_id !== activeTillSession.session_id) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ success: false, message: "The selected till session is not the cashier's active session." });
+        }
+      }
+
       let paymentChannel = null;
       const channelTypes = paymentChannelTypes(method);
       if (channelTypes.length && method !== "CREDIT") {
@@ -550,12 +577,13 @@ router.post(
       const saleResult = await client.query(`
         INSERT INTO sal.pos_sale (
           sale_no, transaction_date, location_id, customer_id, payment_method,
+          session_id, till_id,
           amount_tendered, change_amount, subtotal, total_amount, taxable_subtotal, tax_total, tax_snapshot_at, status,
           idempotency_key, created_by, due_date
         )
-        VALUES (sal.next_pos_sale_no(), current_date, $1, $2, $3, $4, $5, $6, $6, $10, $11, now(), 'DRAFT', $7, $8, $9)
+        VALUES (sal.next_pos_sale_no(), current_date, $1, $2, $3, $12::uuid, $13::uuid, $4, $5, $6, $6, $10, $11, now(), 'DRAFT', $7, $8, $9)
         RETURNING pos_sale_id, sale_no;`,
-        [locationId, customerId, method, tendered, method === "CASH" ? Number((tendered - subtotal).toFixed(2)) : 0, subtotal, idempotencyKey, req.user?.user_id || null, method === "CREDIT" ? (body.due_date || null) : null, taxTotals.taxableAmount, taxTotals.taxAmount]
+        [locationId, customerId, method, tendered, method === "CASH" ? Number((tendered - subtotal).toFixed(2)) : 0, subtotal, idempotencyKey, req.user?.user_id || null, method === "CREDIT" ? (body.due_date || null) : null, taxTotals.taxableAmount, taxTotals.taxAmount, activeTillSession?.session_id || null, activeTillSession?.till_id || null]
       );
       const saleId = saleResult.rows[0].pos_sale_id;
       if (paymentChannel) {
@@ -590,6 +618,13 @@ router.post(
         );
       }
       await client.query("SELECT sal.post_pos_sale($1::uuid);", [saleId]);
+      const posted = await client.query("SELECT posted_journal_id FROM sal.pos_sale WHERE pos_sale_id=$1", [saleId]);
+      if (activeTillSession && method === "CASH") {
+        await client.query(`INSERT INTO app.till_cash_movement(company_id,branch_id,location_id,till_id,session_id,movement_type,amount,source_document_type,source_document_id,created_by)
+          VALUES($1,$2,$3,$4,$5,'CASH_SALE',$6,'POS_SALE',$7,$8) RETURNING movement_id`, [companyId, activeTillSession.branch_id, activeTillSession.location_id, activeTillSession.till_id, activeTillSession.session_id, subtotal, saleId, req.user?.user_id || null]).then(async (movement) => {
+          if (posted.rows[0]?.posted_journal_id) await client.query("UPDATE app.till_cash_movement SET journal_id=$2 WHERE movement_id=$1", [movement.rows[0].movement_id, posted.rows[0].posted_journal_id]);
+        });
+      }
       if (taxEnabled && Number(taxTotals.taxAmount) > 0) {
         const account = await client.query("SELECT output_vat_account_id FROM app.company_profile WHERE is_active ORDER BY created_at,company_id LIMIT 1");
         if (!account.rows[0]?.output_vat_account_id) throw new Error("Output VAT Payable account is not configured.");

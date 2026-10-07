@@ -2,6 +2,7 @@ import express from "express";
 import { pool, query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission } from "../middleware/permissions.js";
+import { logBusinessEvent } from "../services/audit.service.js";
 
 const router = express.Router();
 
@@ -13,33 +14,39 @@ router.get("/", requireAuth, async (req, res) => {
   try {
     const result = await query(`
       SELECT
-        payment_account_control_id,
-        account_id,
-        account_code,
-        account_name,
-        account_type,
-        channel_type,
-        provider_name,
-        account_number_masked,
-        is_payment_account,
-        allow_negative,
-        overdraft_limit,
-        overdraft_expiry_date,
-        is_active,
-        total_debit,
-        total_credit,
-        current_balance,
-        available_balance
-      FROM fin.v_payment_account_balance
+        v.payment_account_control_id,
+        v.account_id,
+        v.account_code,
+        v.account_name,
+        v.account_type,
+        v.channel_type,
+        v.provider_name,
+        v.account_number_masked,
+        v.is_payment_account,
+        v.allow_negative,
+        v.overdraft_limit,
+        v.overdraft_expiry_date,
+        v.is_active,
+        v.total_debit,
+        v.total_credit,
+        v.current_balance,
+        v.available_balance,
+        pac.account_role,
+        pac.branch_id,
+        b.branch_code,
+        b.branch_name
+      FROM fin.v_payment_account_balance v
+      JOIN fin.payment_account_control pac ON pac.account_id=v.account_id
+      LEFT JOIN app.branch b ON b.branch_id=pac.branch_id
       ORDER BY
-        CASE channel_type
+        CASE v.channel_type
           WHEN 'CASH' THEN 1
           WHEN 'BANK' THEN 2
           WHEN 'MOBILE_MONEY' THEN 3
           ELSE 9
         END,
-        account_code;
-    `);
+        v.account_code;
+      `);
 
     res.json({
       success: true,
@@ -119,6 +126,8 @@ router.post(
         overdraft_expiry_date = null,
         is_active = true,
         notes = null,
+        account_role = "GENERAL",
+        branch_id = null,
       } = req.body || {};
 
       if (!account_id) {
@@ -136,6 +145,8 @@ router.post(
       }
 
       const normalizedChannelType = String(channel_type).trim().toUpperCase();
+      const normalizedRole = String(account_role || "GENERAL").trim().toUpperCase();
+      const scopedBranchId = normalizedRole === "PETTY_CASH" ? (branch_id || req.branchId || null) : null;
 
       if (!["CASH", "BANK", "MOBILE_MONEY", "CARD", "BANK_TRANSFER"].includes(normalizedChannelType)) {
         return res.status(400).json({
@@ -143,6 +154,9 @@ router.post(
           message: "channel_type must be CASH, BANK, MOBILE_MONEY, CARD, or BANK_TRANSFER.",
         });
       }
+      if (!["GENERAL", "PETTY_CASH"].includes(normalizedRole)) return res.status(400).json({ success: false, message: "account_role must be GENERAL or PETTY_CASH." });
+      if (normalizedRole === "PETTY_CASH" && normalizedChannelType !== "CASH") return res.status(400).json({ success: false, message: "PETTY_CASH accounts must use the CASH channel." });
+      if (normalizedRole === "PETTY_CASH" && !scopedBranchId) return res.status(400).json({ success: false, message: "PETTY_CASH requires a branch." });
 
       if (Number(overdraft_limit || 0) < 0) {
         return res.status(400).json({
@@ -162,6 +176,7 @@ router.post(
       }
 
       await client.query("BEGIN");
+      await client.query("SELECT set_config('app.current_user_id', $1, true)", [req.user?.user_id || null]);
 
       const accountCheck = await client.query(
         `
@@ -211,6 +226,8 @@ router.post(
           overdraft_expiry_date,
           is_active,
           notes,
+          account_role,
+          branch_id,
           created_at,
           updated_at
         )
@@ -225,6 +242,8 @@ router.post(
           $8,
           $9,
           $10,
+          $11,
+          $12,
           now(),
           now()
         )
@@ -239,6 +258,8 @@ router.post(
           overdraft_expiry_date = EXCLUDED.overdraft_expiry_date,
           is_active = EXCLUDED.is_active,
           notes = EXCLUDED.notes,
+          account_role = EXCLUDED.account_role,
+          branch_id = EXCLUDED.branch_id,
           updated_at = now()
         RETURNING *;
         `,
@@ -253,8 +274,13 @@ router.post(
           overdraft_expiry_date || null,
           Boolean(is_active),
           notes,
+          normalizedRole,
+          scopedBranchId,
         ]
       );
+
+      const eventCode = normalizedRole === "PETTY_CASH" ? "PETTY_CASH_ACCOUNT_CREATED" : "PAYMENT_ACCOUNT_CONFIG_CREATED";
+      await logBusinessEvent(client, { eventCode, objectType: "PAYMENT_ACCOUNT_CONTROL", objectId: result.rows[0].payment_account_control_id, userId: req.user?.user_id || null, branchId: scopedBranchId, metadata: { account_id, account_role: normalizedRole, channel_type: normalizedChannelType, provider_name, is_active: Boolean(is_active), is_payment_account: Boolean(is_payment_account) } });
 
       await client.query("COMMIT");
 
@@ -302,6 +328,8 @@ router.patch(
         overdraft_expiry_date,
         is_active,
         notes,
+        account_role,
+        branch_id,
       } = req.body || {};
 
       if (!accountId) {
@@ -315,6 +343,7 @@ router.patch(
         channel_type === undefined || channel_type === null
           ? null
           : String(channel_type).trim().toUpperCase();
+      const normalizedRole = account_role === undefined || account_role === null ? null : String(account_role).trim().toUpperCase();
 
       if (
         normalizedChannelType &&
@@ -325,6 +354,7 @@ router.patch(
           message: "channel_type must be CASH, BANK, MOBILE_MONEY, CARD, or BANK_TRANSFER.",
         });
       }
+      if (normalizedRole && !["GENERAL", "PETTY_CASH"].includes(normalizedRole)) return res.status(400).json({ success: false, message: "account_role must be GENERAL or PETTY_CASH." });
 
       if (
         overdraft_limit !== undefined &&
@@ -338,6 +368,7 @@ router.patch(
       }
 
       await client.query("BEGIN");
+      await client.query("SELECT set_config('app.current_user_id', $1, true)", [req.user?.user_id || null]);
 
       const currentResult = await client.query(
         `
@@ -365,6 +396,10 @@ router.patch(
       const current = currentResult.rows[0];
 
       const finalChannelType = normalizedChannelType || current.channel_type;
+      const finalRole = normalizedRole || current.account_role || "GENERAL";
+      const finalBranchId = finalRole === "PETTY_CASH" ? (branch_id || current.branch_id || req.branchId || null) : null;
+      if (finalRole === "PETTY_CASH" && finalChannelType !== "CASH") { await client.query("ROLLBACK"); return res.status(400).json({ success: false, message: "PETTY_CASH accounts must use the CASH channel." }); }
+      if (finalRole === "PETTY_CASH" && !finalBranchId) { await client.query("ROLLBACK"); return res.status(400).json({ success: false, message: "PETTY_CASH requires a branch." }); }
       const finalAllowNegative =
         allow_negative === undefined || allow_negative === null
           ? current.allow_negative
@@ -391,6 +426,8 @@ router.patch(
           overdraft_expiry_date = $8,
           is_active = COALESCE($9, is_active),
           notes = COALESCE($10, notes),
+          account_role = COALESCE($11, account_role),
+          branch_id = $12,
           updated_at = now()
         WHERE account_id = $1
         RETURNING *;
@@ -414,8 +451,13 @@ router.patch(
             ? null
             : Boolean(is_active),
           notes ?? null,
+          normalizedRole,
+          finalBranchId,
         ]
       );
+
+      const eventCode = finalRole === "PETTY_CASH" ? "PETTY_CASH_ACCOUNT_UPDATED" : "PAYMENT_ACCOUNT_CONFIG_UPDATED";
+      await logBusinessEvent(client, { eventCode, objectType: "PAYMENT_ACCOUNT_CONTROL", objectId: result.rows[0].payment_account_control_id, userId: req.user?.user_id || null, branchId: finalBranchId, metadata: { before: { account_role: current.account_role, branch_id: current.branch_id, channel_type: current.channel_type, provider_name: current.provider_name, is_active: current.is_active, allow_negative: current.allow_negative, overdraft_limit: current.overdraft_limit }, after: { account_role: result.rows[0].account_role, branch_id: result.rows[0].branch_id, channel_type: result.rows[0].channel_type, provider_name: result.rows[0].provider_name, is_active: result.rows[0].is_active, allow_negative: result.rows[0].allow_negative, overdraft_limit: result.rows[0].overdraft_limit } } });
 
       await client.query("COMMIT");
 

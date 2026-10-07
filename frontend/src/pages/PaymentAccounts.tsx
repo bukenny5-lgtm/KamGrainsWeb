@@ -12,12 +12,15 @@ import {
 } from "lucide-react";
 
 import {
+  createPaymentAccountControl,
+  getAvailablePaymentAccountGlAccounts,
   getPaymentAccounts,
   updatePaymentAccountControl,
   testPaymentAccountCanPay,
 } from "@/api/client";
 
 import Can from "@/components/Can";
+import PaymentAccountTransfers from "@/components/PaymentAccountTransfers";
 import { ACTION_ROLES } from "@/lib/permissions";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -131,6 +134,7 @@ export default function PaymentAccounts() {
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
   const [editOpen, setEditOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<AnyRecord | null>(
     null
   );
@@ -143,12 +147,23 @@ export default function PaymentAccounts() {
   const [overdraftExpiryDate, setOverdraftExpiryDate] = useState("");
   const [isActive, setIsActive] = useState("true");
   const [notes, setNotes] = useState("");
+  const [accountRole, setAccountRole] = useState("GENERAL");
+  const [branchId, setBranchId] = useState("");
+  const [createGlAccount, setCreateGlAccount] = useState("");
+  const [createChannel, setCreateChannel] = useState("CASH");
+  const [createProvider, setCreateProvider] = useState("");
+  const [createActive, setCreateActive] = useState("true");
 
   const [testAmount, setTestAmount] = useState("");
 
   const accountsQuery = useQuery({
     queryKey: ["payment-accounts"],
     queryFn: getPaymentAccounts,
+  });
+  const glAccountsQuery = useQuery({
+    queryKey: ["payment-account-gl-accounts"],
+    queryFn: getAvailablePaymentAccountGlAccounts,
+    enabled: createOpen,
   });
 
   const updateMutation = useMutation({
@@ -175,6 +190,24 @@ export default function PaymentAccounts() {
       accountId: string;
       payload: unknown;
     }) => testPaymentAccountCanPay(accountId, payload),
+  });
+  const createMutation = useMutation({
+    mutationFn: () => createPaymentAccountControl({
+      account_id: createGlAccount,
+      channel_type: createChannel,
+      provider_name: createProvider || null,
+      is_payment_account: true,
+      allow_negative: false,
+      is_active: createActive === "true",
+      account_role: accountRole,
+      branch_id: branchId || null,
+    }),
+    onSuccess: async () => {
+      await accountsQuery.refetch();
+      setCreateOpen(false);
+      setCreateGlAccount("");
+      setCreateProvider("");
+    },
   });
 
   const accounts: AnyRecord[] = normalizeArray(accountsQuery.data, ["data"]);
@@ -228,6 +261,8 @@ export default function PaymentAccounts() {
     );
     setIsActive(String(Boolean(row.is_active)));
     setNotes(String(row.notes || ""));
+    setAccountRole(String(row.account_role || "GENERAL"));
+    setBranchId(String(row.branch_id || ""));
     setTestAmount("");
     testMutation.reset();
     setEditOpen(true);
@@ -247,6 +282,8 @@ export default function PaymentAccounts() {
         overdraft_expiry_date: overdraftExpiryDate || null,
         is_active: isActive === "true",
         notes: notes || null,
+        account_role: accountRole,
+        branch_id: branchId || null,
       },
     });
   }
@@ -294,18 +331,23 @@ export default function PaymentAccounts() {
           </p>
         </div>
 
-        <Button
-          variant="outline"
-          onClick={handleRefresh}
-          disabled={accountsQuery.isFetching}
-        >
+        <div className="flex gap-2">
+          <Can roles={ACTION_ROLES.CREATE_SETUP}>
+            <Button onClick={() => setCreateOpen(true)}>Create Payment Account</Button>
+          </Can>
+          <Button
+            variant="outline"
+            onClick={handleRefresh}
+            disabled={accountsQuery.isFetching}
+          >
           {accountsQuery.isFetching ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (
             <RefreshCw className="mr-2 h-4 w-4" />
           )}
-          Refresh
-        </Button>
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {lastRefreshed && (
@@ -377,6 +419,8 @@ export default function PaymentAccounts() {
           approved overdraft limit.
         </AlertDescription>
       </Alert>
+
+      <PaymentAccountTransfers accounts={accounts} onChanged={handleRefresh} />
 
       <Card className="rounded-2xl shadow-sm">
         <CardHeader>
@@ -548,6 +592,15 @@ export default function PaymentAccounts() {
                 </div>
 
                 <div className="space-y-2">
+                  <Label>Account Role</Label>
+                  <Select value={accountRole} onValueChange={setAccountRole}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="GENERAL">GENERAL</SelectItem><SelectItem value="PETTY_CASH">PETTY CASH</SelectItem></SelectContent>
+                  </Select>
+                </div>
+                {accountRole === "PETTY_CASH" && <div className="space-y-2"><Label>Owning Branch ID</Label><Input value={branchId} onChange={e => setBranchId(e.target.value)} placeholder="UUID of the authorized branch" /></div>}
+
+                <div className="space-y-2">
                   <Label>Allow Negative / Overdraft</Label>
                   <Select
                     value={allowNegative}
@@ -681,6 +734,22 @@ export default function PaymentAccounts() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="w-[96vw] !max-w-[650px]">
+          <DialogHeader><DialogTitle>Create Payment Account Control</DialogTitle></DialogHeader>
+          <div className="grid gap-4 rounded-2xl border bg-slate-50 p-5">
+            <div className="space-y-2"><Label>Linked GL Account</Label><Select value={createGlAccount} onValueChange={setCreateGlAccount}><SelectTrigger><SelectValue placeholder="Select active asset GL account" /></SelectTrigger><SelectContent>{normalizeArray(glAccountsQuery.data, ["data"]).filter((a: AnyRecord) => !a.payment_account_control_id || !a.is_payment_account).map((a: AnyRecord) => <SelectItem key={a.account_id} value={a.account_id}>{a.account_code} — {a.account_name}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>Channel</Label><Select value={createChannel} onValueChange={setCreateChannel}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="CASH">CASH</SelectItem><SelectItem value="BANK">BANK</SelectItem><SelectItem value="MOBILE_MONEY">MOBILE MONEY</SelectItem><SelectItem value="CARD">CARD</SelectItem><SelectItem value="BANK_TRANSFER">BANK TRANSFER</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label>Provider / Label</Label><Input value={createProvider} onChange={e => setCreateProvider(e.target.value)} placeholder="Example: TILL-CASH or MAIN-SAFE" /></div>
+            <div className="space-y-2"><Label>Account Role</Label><Select value={accountRole} onValueChange={setAccountRole}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="GENERAL">GENERAL</SelectItem><SelectItem value="PETTY_CASH">PETTY CASH</SelectItem></SelectContent></Select></div>
+            {accountRole === "PETTY_CASH" && <div className="space-y-2"><Label>Owning Branch ID</Label><Input value={branchId} onChange={e => setBranchId(e.target.value)} placeholder="UUID of the authorized branch" /></div>}
+            <div className="space-y-2"><Label>Status</Label><Select value={createActive} onValueChange={setCreateActive}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="true">Active</SelectItem><SelectItem value="false">Inactive</SelectItem></SelectContent></Select></div>
+          </div>
+          {createMutation.isError && <Alert variant="destructive"><AlertTitle>Failed to create payment account</AlertTitle><AlertDescription>{getErrorMessage(createMutation.error)}</AlertDescription></Alert>}
+          <div className="flex justify-end gap-3"><Button variant="outline" onClick={() => setCreateOpen(false)}>Close</Button><Can roles={ACTION_ROLES.CREATE_SETUP}><Button disabled={!createGlAccount || createMutation.isPending} onClick={() => createMutation.mutate()}>Create</Button></Can></div>
         </DialogContent>
       </Dialog>
     </div>

@@ -38,6 +38,7 @@ import dashboardRoutes from "./routes/dashboard.routes.js";
 import userRoutes from "./routes/users.routes.js";
 import auditEventRoutes from "./routes/auditEvents.routes.js";
 import paymentAccountsRoutes from "./routes/paymentAccounts.routes.js";
+import paymentAccountTransfersRoutes from "./routes/paymentAccountTransfers.routes.js";
 import openingBalancesRoutes from "./routes/openingBalances.routes.js";
 import accruedExpensesRoutes from "./routes/accruedExpenses.routes.js";
 import apiPaymentChannelsRoutes from "./routes/apiPaymentChannels.routes.js";
@@ -49,6 +50,7 @@ import customerReturnRoutes from "./routes/customerReturns.routes.js";
 import returnPolicyRoutes from "./routes/returnPolicy.routes.js";
 import taxRoutes from "./routes/tax.routes.js";
 import efrisRoutes from "./routes/efris.routes.js";
+import tillSessionsRoutes from "./routes/tillSessions.routes.js";
 
 // ✅ Import reconciliation routes
 import reconciliationRoutes from "./routes/reconciliations.routes.js";
@@ -102,6 +104,7 @@ app.use("/api/uoms", uomRoutes);
 app.use("/api/lots", lotRoutes);
 app.use("/api/gl-accounts", glAccountRoutes);
 app.use("/api/payment-accounts", paymentAccountsRoutes);
+app.use("/api/payment-account-transfers", paymentAccountTransfersRoutes);
 app.use("/api/opening-balances", openingBalancesRoutes);
 app.use("/api/accrued-expenses", accruedExpensesRoutes);
 app.use("/api/api-payment-channels", apiPaymentChannelsRoutes);
@@ -113,6 +116,7 @@ app.use("/api/customer-returns", customerReturnRoutes);
 app.use("/api/return-policy", returnPolicyRoutes);
 app.use("/api/tax", taxRoutes);
 app.use("/api/efris", efrisRoutes);
+app.use("/api/till-management", tillSessionsRoutes);
 
 // ===============================
 // Operations routes

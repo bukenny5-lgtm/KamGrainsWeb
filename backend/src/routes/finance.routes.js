@@ -3,6 +3,7 @@ import { pool, query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { ACTION_ROLES, getUserRoles, requirePermission } from "../middleware/permissions.js";
 import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
+import { logBusinessEvent } from "../services/audit.service.js";
 
 const router = express.Router();
 router.use(requireAuth,requireLocationAccessWhenSpecified);
@@ -62,6 +63,57 @@ function sendFinanceError(res, error, fallbackMessage, fallbackStatus = 500) {
     detail: error?.detail || null,
     code: error?.code || null
   });
+}
+
+const EXPENSE_PAYMENT_METHODS = new Set(["CASH", "BANK", "MOBILE_MONEY", "CHEQUE", "OTHER"]);
+
+function normalizedExpenseMethod(value) {
+  const method = String(value || "CASH").trim().toUpperCase();
+  if (!EXPENSE_PAYMENT_METHODS.has(method)) {
+    const error = new Error(`Unsupported expense payment method: ${method}.`);
+    error.statusCode = 400;
+    throw error;
+  }
+  return method;
+}
+
+function expectedPaymentChannel(method) {
+  if (method === "CHEQUE") return "BANK";
+  if (method === "OTHER") return null;
+  return method;
+}
+
+async function validateExpensePaymentAccount(client, accountId, method, branchId = null) {
+  const channel = expectedPaymentChannel(method);
+  const result = await client.query(`
+    SELECT pac.account_id,pac.channel_type,pac.is_active,pac.is_payment_account,
+           ga.account_code,ga.account_name,ga.account_type,pac.account_role,pac.branch_id
+    FROM fin.payment_account_control pac
+    JOIN fin.gl_account ga ON ga.account_id=pac.account_id
+    WHERE pac.account_id=$1
+  `, [accountId]);
+  if (!result.rowCount) throw Object.assign(new Error("Selected payment account is not configured."), { statusCode: 400 });
+  const account = result.rows[0];
+  if (!account.is_active || !account.is_payment_account) throw Object.assign(new Error("Selected payment account is inactive or not enabled for payments."), { statusCode: 400 });
+  if (account.account_type !== "ASSET") throw Object.assign(new Error("Payment account must link to an ASSET GL account."), { statusCode: 400 });
+  if (account.account_role === "PETTY_CASH" && account.branch_id !== branchId) throw Object.assign(new Error("Petty Cash payment accounts can only be used by their owning branch."), { statusCode: 403 });
+  if (channel && account.channel_type !== channel) throw Object.assign(new Error(`${method} requires a ${channel} payment account.`), { statusCode: 400 });
+  return account;
+}
+
+async function validateExpenseLines(client, lines) {
+  const ids = [...new Set(lines.map((line) => line.expense_account_id))];
+  const result = await client.query(`
+    SELECT account_id,account_code,account_name,account_type,is_active
+    FROM fin.gl_account WHERE account_id=ANY($1::uuid[])
+  `, [ids]);
+  const byId = new Map(result.rows.map((row) => [row.account_id, row]));
+  for (const line of lines) {
+    const account = byId.get(line.expense_account_id);
+    if (!account) throw Object.assign(new Error("One of the selected expense accounts was not found."), { statusCode: 400 });
+    if (!account.is_active) throw Object.assign(new Error(`${account.account_code} - ${account.account_name} is inactive.`), { statusCode: 400 });
+    if (account.account_type !== "EXPENSE") throw Object.assign(new Error(`${account.account_code} - ${account.account_name} is not an EXPENSE account.`), { statusCode: 400 });
+  }
 }
 
 /**
@@ -420,6 +472,10 @@ router.get("/reports/general-ledger", async (req, res) => {
         gj.journal_date,
         gj.description,
         gj.source_module,
+        pac.channel_type,
+        pac.provider_name,
+        CASE WHEN gj.source_module IN ('CASH_TRANSFER','TRF')
+             THEN 'INTERNAL_TRANSFER' ELSE 'OPERATING_CASH' END AS cash_flow_type,
         ga.account_code,
         ga.account_name,
         ga.account_type,
@@ -707,7 +763,11 @@ router.get("/reports/cashbook", async (req, res) => {
         ON gjl.journal_id = gj.journal_id
       JOIN fin.gl_account ga
         ON ga.account_id = gjl.account_id
-      WHERE ga.account_code IN ('1000', '1010') AND gj.branch_id=$1
+      JOIN fin.payment_account_control pac
+        ON pac.account_id = ga.account_id
+       AND pac.is_payment_account = true
+       AND pac.is_active = true
+      WHERE gj.branch_id=$1
       ORDER BY gj.journal_date DESC, gj.journal_no;
     `,[req.branchId]);
 
@@ -1110,6 +1170,12 @@ router.get("/expense-vouchers", async (req, res) => {
         ev.notes,
         ev.status,
         ev.posted_journal_id,
+        ev.reversal_journal_id,
+        ev.void_reason,
+        ev.voided_at,
+        vu.full_name AS reversed_by_name,
+        gjp.journal_no AS posted_journal_no,
+        gjr.journal_no AS reversal_journal_no,
         ev.posted_at,
         ev.posted_by,
         ev.created_by,
@@ -1121,6 +1187,9 @@ router.get("/expense-vouchers", async (req, res) => {
         ON p.party_id = ev.payee_id
       LEFT JOIN fin.gl_account pa
         ON pa.account_id = ev.payment_account_id
+      LEFT JOIN sec.app_user vu ON vu.user_id=ev.voided_by
+      LEFT JOIN fin.gl_journal gjp ON gjp.journal_id=ev.posted_journal_id
+      LEFT JOIN fin.gl_journal gjr ON gjr.journal_id=ev.reversal_journal_id
       LEFT JOIN fin.expense_voucher_line evl
         ON evl.expense_voucher_id = ev.expense_voucher_id
       WHERE ev.branch_id=$1
@@ -1139,6 +1208,12 @@ router.get("/expense-vouchers", async (req, res) => {
         ev.notes,
         ev.status,
         ev.posted_journal_id,
+        ev.reversal_journal_id,
+        ev.void_reason,
+        ev.voided_at,
+        vu.full_name,
+        gjp.journal_no,
+        gjr.journal_no,
         ev.posted_at,
         ev.posted_by,
         ev.created_by,
@@ -1186,6 +1261,12 @@ router.get("/expense-vouchers/:voucherNo", async (req, res) => {
         ev.notes,
         ev.status,
         ev.posted_journal_id,
+        ev.reversal_journal_id,
+        ev.void_reason,
+        ev.voided_at,
+        vu.full_name AS reversed_by_name,
+        gjp.journal_no AS posted_journal_no,
+        gjr.journal_no AS reversal_journal_no,
         ev.posted_at,
         ev.posted_by,
         ev.created_by,
@@ -1195,6 +1276,9 @@ router.get("/expense-vouchers/:voucherNo", async (req, res) => {
         ON p.party_id = ev.payee_id
       LEFT JOIN fin.gl_account pa
         ON pa.account_id = ev.payment_account_id
+      LEFT JOIN sec.app_user vu ON vu.user_id=ev.voided_by
+      LEFT JOIN fin.gl_journal gjp ON gjp.journal_id=ev.posted_journal_id
+      LEFT JOIN fin.gl_journal gjr ON gjr.journal_id=ev.reversal_journal_id
       WHERE ev.voucher_no = $1 AND ev.branch_id=$2;
       `,
       [voucherNo,req.branchId]
@@ -1273,9 +1357,18 @@ router.post(
         payment_method = "CASH",
         reference_no = null,
         notes = null,
-        created_by = null,
         lines
       } = req.body || {};
+      const normalizedMethod = normalizedExpenseMethod(payment_method);
+      const branch_id = req.branchId;
+
+      if (!branch_id) {
+        return res.status(400).json({
+          success: false,
+          message: "An authorized branch context is required to create an expense voucher.",
+          error: "branch_id is not available from the authenticated request context."
+        });
+      }
 
       if (!voucher_date) {
         return res.status(400).json({
@@ -1313,13 +1406,16 @@ router.post(
           });
         }
 
-        if (Number(line.amount) <= 0) {
+        if (!Number.isFinite(Number(line.amount)) || Number(line.amount) <= 0) {
           return res.status(400).json({
             success: false,
             message: "Each line amount must be greater than zero."
           });
         }
       }
+
+      await validateExpensePaymentAccount(client, payment_account_id, normalizedMethod, branch_id);
+      await validateExpenseLines(client, lines);
 
       await client.query("BEGIN");
 
@@ -1384,10 +1480,10 @@ router.post(
           voucher_date,
           payee_id,
           payment_account_id,
-          payment_method,
+          normalizedMethod,
           reference_no,
           notes,
-          created_by
+          req.user?.user_id || null
         ]
       );
 
@@ -1424,6 +1520,20 @@ router.post(
         createdLines.push(lineResult.rows[0]);
       }
 
+      const companyResult = await client.query("SELECT company_id FROM app.branch WHERE branch_id=$1", [branch_id]);
+      await logBusinessEvent(client, {
+        eventCode: "EXPENSE_VOUCHER_CREATED",
+        objectType: "EXPENSE_VOUCHER",
+        objectId: voucher.expense_voucher_id,
+        documentNo: voucher.voucher_no,
+        companyId: companyResult.rows[0]?.company_id || null,
+        branchId: voucher.branch_id,
+        userId: req.user?.user_id || null,
+        amount: lines.reduce((sum, line) => sum + Number(line.amount || 0), 0),
+        reference: voucher.reference_no,
+        metadata: { payment_account_id: voucher.payment_account_id, payment_method: voucher.payment_method },
+      });
+
       await client.query("COMMIT");
 
       res.status(201).json({
@@ -1437,12 +1547,7 @@ router.post(
     } catch (error) {
       await client.query("ROLLBACK");
 
-      res.status(500).json({
-        success: false,
-        message: "Failed to create expense voucher.",
-        error: error.message,
-        detail: error.detail || null
-      });
+      return sendFinanceError(res, error, "Failed to create expense voucher.", 500);
     } finally {
       client.release();
     }
@@ -1533,6 +1638,11 @@ router.post(
           ev.notes,
           ev.status,
           ev.posted_journal_id,
+          ev.reversal_journal_id,
+          ev.void_reason,
+          ev.voided_at,
+          gjp.journal_no AS posted_journal_no,
+          gjr.journal_no AS reversal_journal_no,
           ev.posted_at,
           ev.posted_by,
           ev.created_by,
@@ -1542,10 +1652,26 @@ router.post(
           ON p.party_id = ev.payee_id
         LEFT JOIN fin.gl_account pa
           ON pa.account_id = ev.payment_account_id
+        LEFT JOIN fin.gl_journal gjp ON gjp.journal_id=ev.posted_journal_id
+        LEFT JOIN fin.gl_journal gjr ON gjr.journal_id=ev.reversal_journal_id
         WHERE ev.voucher_no = $1;
         `,
         [voucherNo]
       );
+
+      const postedTotal = await client.query("SELECT COALESCE(SUM(amount),0) AS total_amount FROM fin.expense_voucher_line WHERE expense_voucher_id=$1", [postedVoucher.rows[0]?.expense_voucher_id]);
+      await logBusinessEvent(client, {
+        eventCode: "EXPENSE_VOUCHER_POSTED",
+        objectType: "EXPENSE_VOUCHER",
+        objectId: postedVoucher.rows[0].expense_voucher_id,
+        documentNo: postedVoucher.rows[0].voucher_no,
+        branchId: req.branchId,
+        userId: user_id,
+        amount: postedTotal.rows[0]?.total_amount,
+        journalId: postedVoucher.rows[0].posted_journal_id,
+        reference: postedVoucher.rows[0].reference_no,
+        metadata: { payment_account_id: postedVoucher.rows[0].payment_account_id, payment_method: postedVoucher.rows[0].payment_method },
+      });
 
       await client.query("COMMIT");
 
@@ -1567,6 +1693,51 @@ router.post(
     } finally {
       client.release();
     }
+  }
+);
+
+router.post(
+  "/expense-vouchers/:voucherNo/void",
+  requireAuth,
+  requirePermission("VOID_EXPENSE_VOUCHER"),
+  async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const reason = String(req.body?.reason || "").trim();
+      if (!reason) return res.status(400).json({ success: false, message: "A reason is required to void an expense voucher." });
+      await client.query("BEGIN");
+      const result = await client.query(
+        "SELECT fin.void_expense_voucher_by_no($1,$2::uuid,$3::text) AS reversal_journal_id",
+        [req.params.voucherNo, req.user?.user_id || null, reason]
+      );
+      const detail = await client.query(`
+        SELECT ev.*,p.party_name AS payee_name,gj.journal_no AS reversal_journal_no,
+               COALESCE((SELECT SUM(amount) FROM fin.expense_voucher_line WHERE expense_voucher_id=ev.expense_voucher_id),0) AS total_amount
+        FROM fin.expense_voucher ev
+        LEFT JOIN app.party p ON p.party_id=ev.payee_id
+        LEFT JOIN fin.gl_journal gj ON gj.journal_id=ev.reversal_journal_id
+        WHERE ev.voucher_no=$1 AND ev.branch_id=$2
+      `, [req.params.voucherNo, req.branchId]);
+      await logBusinessEvent(client, {
+        eventCode: "EXPENSE_VOUCHER_REVERSED",
+        objectType: "EXPENSE_VOUCHER",
+        objectId: detail.rows[0].expense_voucher_id,
+        documentNo: detail.rows[0].voucher_no,
+        branchId: detail.rows[0].branch_id,
+        userId: req.user?.user_id || null,
+        amount: detail.rows[0].total_amount,
+        reason,
+        journalId: detail.rows[0].reversal_journal_id,
+        relatedObjectId: detail.rows[0].posted_journal_id,
+        reference: detail.rows[0].reference_no,
+        metadata: { original_journal_no: detail.rows[0].posted_journal_no || null, reversal_journal_no: detail.rows[0].reversal_journal_no || null },
+      });
+      await client.query("COMMIT");
+      return res.json({ success: true, message: "Expense voucher voided with a balanced reversal.", reversal_journal_id: result.rows[0].reversal_journal_id, data: detail.rows[0] });
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      return sendFinanceError(res, error, "Failed to void expense voucher.", 500);
+    } finally { client.release(); }
   }
 );
 

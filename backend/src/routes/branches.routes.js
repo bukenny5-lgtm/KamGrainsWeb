@@ -1,8 +1,9 @@
 import express from "express";
-import { query } from "../db.js";
+import { pool, query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { ACTION_ROLES, getUserRoles, requirePermission } from "../middleware/permissions.js";
 import { getActiveCompanyId } from "../services/businessFeatures.service.js";
+import { canManageAllBranches } from "../services/managementScope.service.js";
 
 const router = express.Router();
 const allBranch = (req) => getUserRoles(req).includes("HEAD_OFFICE");
@@ -34,12 +35,18 @@ router.get("/context", requireAuth, async (req,res) => {
       WHERE b.company_id=$3 AND b.is_active AND ($2::boolean OR EXISTS(SELECT 1 FROM sec.user_branch ub WHERE ub.user_id=$1 AND ub.branch_id=b.branch_id AND ub.is_active))
         AND ($5::uuid IS NULL OR b.branch_id=$5::uuid)
       GROUP BY b.branch_id ORDER BY b.branch_name`,[req.user?.user_id,branchPerm,await getActiveCompanyId(),locPerm,branchId]);
-    const defaults = await query(`SELECT default_branch_id,default_location_id FROM app.company_profile WHERE is_active ORDER BY created_at,company_id LIMIT 1`);
+    const defaults = await query(`
+      SELECT ub.branch_id AS default_branch_id, ul.location_id AS default_location_id
+      FROM sec.user_branch ub
+      LEFT JOIN sec.user_location ul
+        ON ul.user_id=ub.user_id AND ul.is_active AND ul.is_default
+      WHERE ub.user_id=$1 AND ub.is_active AND ub.is_default
+      LIMIT 1`, [req.user?.user_id]);
     if (branchId && !branches.rowCount) return res.status(403).json({success:false,message:"You are not authorized for this branch."});
     const branch = branches.rows.find((row)=>row.branch_id===branchId) || branches.rows.find((row)=>row.branch_id===defaults.rows[0]?.default_branch_id) || branches.rows[0] || null;
     const authorizedLocations = branch?.locations || [];
     const currentLocation = authorizedLocations.find((location)=>location.location_id===defaults.rows[0]?.default_location_id) || authorizedLocations.find((location)=>location.is_default) || authorizedLocations.find((location)=>location.is_saleable) || authorizedLocations[0] || null;
-    res.json({success:true,company_id:defaults.rows[0] ? (await getActiveCompanyId()) : null,default_branch_id:defaults.rows[0]?.default_branch_id||null,default_location_id:defaults.rows[0]?.default_location_id||null,all_branches:branchPerm,branches:branches.rows,current_branch:branch,current_location:currentLocation});
+    res.json({success:true,company_id:await getActiveCompanyId(),default_branch_id:defaults.rows[0]?.default_branch_id||null,default_location_id:defaults.rows[0]?.default_location_id||null,all_branches:branchPerm,branches:branches.rows,current_branch:branch,current_location:currentLocation});
   } catch(e){res.status(500).json({success:false,message:"Failed to load operating context.",error:e.message});}
 });
 
@@ -49,6 +56,15 @@ router.get("/",requireAuth,async(req,res)=>{
     const result=await query(`SELECT ${branchColumns} FROM app.branch b WHERE b.company_id=$2 AND ($3::boolean OR EXISTS(SELECT 1 FROM sec.user_branch ub WHERE ub.user_id=$1 AND ub.branch_id=b.branch_id AND ub.is_active)) ORDER BY b.branch_name`,[req.user?.user_id,companyId,allBranch(req)||stockVisibleBranch(req)||requestSourceBranch(req)]);
     res.json({success:true,count:result.rowCount,branches:result.rows,data:result.rows});
   }catch(e){res.status(500).json({success:false,message:"Failed to load branches.",error:e.message});}
+});
+
+router.get("/management",requireAuth,requirePermission("VIEW_TILLS"),async(req,res)=>{
+  try {
+    const companyId=await getActiveCompanyId();
+    const central=canManageAllBranches(req);
+    const branches=await query(`SELECT b.branch_id,b.branch_code,b.branch_name,b.is_active,b.is_head_office,b.default_location_id,COALESCE(json_agg(json_build_object('location_id',l.location_id,'location_code',l.location_code,'location_name',l.location_name,'location_type',l.location_type,'is_active',l.is_active,'is_saleable',l.is_saleable,'is_stock_holding',l.is_stock_holding,'created_at',l.created_at) ORDER BY l.location_name) FILTER(WHERE l.location_id IS NOT NULL),'[]'::json) AS locations FROM app.branch b LEFT JOIN app.location l ON l.branch_id=b.branch_id AND l.company_id=b.company_id WHERE b.company_id=$1 AND b.is_active AND ($2::boolean OR EXISTS(SELECT 1 FROM sec.user_branch ub WHERE ub.user_id=$3 AND ub.branch_id=b.branch_id AND ub.is_active)) GROUP BY b.branch_id ORDER BY b.branch_name`,[companyId,central,req.user?.user_id]);
+    res.json({success:true,data:branches.rows,branches:branches.rows,central});
+  }catch(e){res.status(e.statusCode||500).json({success:false,message:e.message||"Failed to load management branches."});}
 });
 
 router.get("/access-admin",requireAuth,requirePermission("ASSIGN_ROLE"),async(req,res)=>{
@@ -90,14 +106,28 @@ router.patch("/:branchId",requireAuth,requirePermission("EDIT_LOCATIONS"),async(
 router.delete("/:branchId",requireAuth,requirePermission("EDIT_LOCATIONS"),async(_req,res)=>res.status(409).json({success:false,message:"Branches cannot be deleted. Deactivate them after moving their default and operational records."}));
 
 router.put("/:branchId/users/:userId",requireAuth,requirePermission("ASSIGN_ROLE"),async(req,res)=>{
+  let client;
   try{
     const {branchId,userId}=req.params;const active=req.body?.is_active!==false;const isDefault=req.body?.is_default===true;
-    const exists=await query(`SELECT 1 FROM app.branch WHERE branch_id=$1`,[branchId]);if(!exists.rowCount)return res.status(404).json({success:false,message:"Branch not found."});
-    if(isDefault)await query(`UPDATE sec.user_branch SET is_default=false,updated_at=now() WHERE user_id=$1`,[userId]);
-    const r=await query(`INSERT INTO sec.user_branch(user_id,branch_id,is_default,is_active) VALUES($1,$2,$3,$4) ON CONFLICT(user_id,branch_id) DO UPDATE SET is_default=EXCLUDED.is_default,is_active=EXCLUDED.is_active,updated_at=now() RETURNING *`,[userId,branchId,isDefault,active]);
-    await query(`INSERT INTO audit.event(event_id,event_ts,user_id,action,table_name,row_pk,row_data,txid) VALUES(gen_random_uuid(),now(),$1,'U','sec.user_branch',jsonb_build_object('user_id',$2::text,'branch_id',$3::text),$4::jsonb,txid_current())`,[req.user?.user_id||null,userId,branchId,JSON.stringify(r.rows[0])]);
+    const exists=await query(`SELECT 1 FROM app.branch WHERE branch_id=$1 AND is_active`,[branchId]);if(!exists.rowCount)return res.status(404).json({success:false,message:"Branch not found or inactive."});
+    client = await pool.connect();
+    await client.query("BEGIN");
+    if(isDefault && active)await client.query(`UPDATE sec.user_branch SET is_default=false,updated_at=now() WHERE user_id=$1`,[userId]);
+    const r=await client.query(`INSERT INTO sec.user_branch(user_id,branch_id,is_default,is_active) VALUES($1,$2,$3,$4) ON CONFLICT(user_id,branch_id) DO UPDATE SET is_default=EXCLUDED.is_default,is_active=EXCLUDED.is_active,updated_at=now() RETURNING *`,[userId,branchId,isDefault&&active,active]);
+    if(!active) {
+      await client.query(`UPDATE sec.user_branch SET is_default=false WHERE user_id=$1 AND branch_id=$2`,[userId,branchId]);
+      await client.query(`
+        UPDATE sec.user_branch SET is_default=true,updated_at=now()
+        WHERE user_id=$1 AND is_active AND branch_id=(
+          SELECT branch_id FROM sec.user_branch
+          WHERE user_id=$1 AND is_active ORDER BY branch_id LIMIT 1
+        ) AND NOT EXISTS(SELECT 1 FROM sec.user_branch WHERE user_id=$1 AND is_active AND is_default)`,[userId]);
+    }
+    const action = active ? (isDefault ? "USER_DEFAULT_BRANCH_CHANGED" : "USER_BRANCH_GRANTED") : "USER_BRANCH_REVOKED";
+    await client.query(`INSERT INTO audit.event(event_id,event_ts,user_id,action,table_name,row_pk,row_data,txid) VALUES(gen_random_uuid(),now(),$1,$2,'sec.user_branch',jsonb_build_object('user_id',$3::text,'branch_id',$4::text),$5::jsonb,txid_current())`,[req.user?.user_id||null,action,userId,branchId,JSON.stringify(r.rows[0])]);
+    await client.query("COMMIT"); client.release();
     res.json({success:true,data:r.rows[0]});
-  }catch(e){res.status(500).json({success:false,message:"Failed to update branch access.",error:e.message});}
+  }catch(e){if(client){await client.query("ROLLBACK").catch(()=>{});client.release();}res.status(e.code==="23514"?400:500).json({success:false,message:"Failed to update branch access.",error:e.message});}
 });
 
 router.put("/default/:branchId",requireAuth,requirePermission("EDIT_LOCATIONS"),async(req,res)=>{

@@ -16,6 +16,8 @@ const BRANCH_SCOPED_REPORTS = new Set([
   "/weekly-purchases-by-product",
   "/weekly-profit-by-product",
   "/weekly-management-summary",
+  "/petty-cash-activity",
+  "/cross-branch-transfers",
 ]);
 router.use((req,res,next)=>{
   const roles=getUserRoles(req);
@@ -65,6 +67,161 @@ function sendFinanceError(res, error, fallbackMessage, fallbackStatus = 500) {
     code: error?.code || null
   });
 }
+
+function reportScope(req, requestedBranch) {
+  const roles = getUserRoles(req);
+  const global = roles.some((role) => ["ADMIN", "HEAD_OFFICE", "AUDITOR"].includes(role));
+  if (!global && requestedBranch && String(requestedBranch) !== String(req.branchId)) {
+    const error = new Error("You are not authorized for the requested branch.");
+    error.statusCode = 403;
+    throw error;
+  }
+  return global ? (requestedBranch || null) : req.branchId;
+}
+
+function reportDates(req) {
+  const end = String(req.query.date_to || new Date().toISOString().slice(0, 10));
+  const start = String(req.query.date_from || end);
+  return [start, end];
+}
+
+/** Branch-level business-event revenue and posted inventory cost. Payments are
+ * deliberately absent: receipts do not create sales revenue. */
+router.get("/branch-performance", async (req, res) => {
+  try {
+    const [dateFrom, dateTo] = reportDates(req);
+    const branchId = reportScope(req, req.query.branch_id);
+    const result = await query(`
+      SELECT b.branch_id,b.branch_code,b.branch_name,
+             COALESCE(SUM(e.revenue),0) AS sales_revenue,
+             COALESCE(SUM(e.cogs),0) AS cogs,
+             COALESCE(SUM(e.revenue-e.cogs),0) AS gross_profit,
+             CASE WHEN COALESCE(SUM(e.revenue),0)=0 THEN 0
+                  ELSE COALESCE(SUM(e.revenue-e.cogs),0)/SUM(e.revenue) END AS gross_margin,
+             COUNT(DISTINCT e.event_id)::int AS transaction_count,
+             COUNT(DISTINCT e.customer_id)::int AS customer_count
+      FROM app.branch b
+      LEFT JOIN reporting.v_sales_event_lines e
+        ON e.branch_id=b.branch_id AND e.event_date BETWEEN $1::date AND $2::date
+      WHERE b.company_id=(SELECT company_id FROM app.company_profile WHERE is_active ORDER BY created_at LIMIT 1)
+        AND b.is_active AND ($3::uuid IS NULL OR b.branch_id=$3::uuid)
+      GROUP BY b.branch_id,b.branch_code,b.branch_name
+      ORDER BY b.branch_name`, [dateFrom, dateTo, branchId]);
+    res.json({ success: true, filters: { date_from: dateFrom, date_to: dateTo, branch_id: branchId }, data: result.rows });
+  } catch (error) { sendFinanceError(res, error, "Failed to load branch performance report.", error.statusCode || 500); }
+});
+
+/** Daily till/session operational performance. Cash movements are reported as
+ * movements, never as sales or profit. */
+router.get("/till-performance", async (req, res) => {
+  try {
+    const [dateFrom, dateTo] = reportDates(req);
+    const branchId = reportScope(req, req.query.branch_id);
+    const locationId = req.query.location_id || null;
+    const tillId = req.query.till_id || null;
+    const result = await query(`
+      WITH scoped_sessions AS (
+        SELECT s.session_id,s.till_id,s.branch_id,s.location_id,s.opened_at::date AS business_date,
+               s.expected_cash,s.counted_cash,s.cash_variance,t.till_code,b.branch_name,l.location_name
+        FROM app.cashier_session s
+        JOIN app.till t ON t.till_id=s.till_id
+        JOIN app.branch b ON b.branch_id=s.branch_id
+        JOIN app.location l ON l.location_id=s.location_id
+        WHERE s.opened_at::date BETWEEN $1::date AND $2::date
+          AND ($3::uuid IS NULL OR s.branch_id=$3::uuid)
+          AND ($4::uuid IS NULL OR s.location_id=$4::uuid)
+          AND ($5::uuid IS NULL OR s.till_id=$5::uuid)
+      ), movement_totals AS (
+        SELECT session_id,
+          COALESCE(SUM(amount) FILTER (WHERE movement_type='CASH_SALE'),0) AS cash_sales,
+          COALESCE(SUM(amount) FILTER (WHERE movement_type='CASH_REFUND'),0) AS cash_refunds,
+          COALESCE(SUM(amount) FILTER (WHERE movement_type='CASH_IN'),0) AS cash_in,
+          COALESCE(SUM(amount) FILTER (WHERE movement_type IN ('CASH_OUT','PAYOUT')),0) AS cash_out,
+          COALESCE(SUM(amount) FILTER (WHERE movement_type='SAFE_DROP'),0) AS safe_drops,
+          COALESCE(SUM(amount) FILTER (WHERE movement_type='OPENING_FLOAT'),0) AS opening_float
+        FROM app.till_cash_movement GROUP BY session_id
+      )
+      SELECT ss.business_date,ss.till_id,ss.till_code,ss.branch_name AS branch,ss.location_name AS location,
+             COUNT(*)::int AS session_count,
+             COALESCE(SUM(mt.cash_sales),0) AS cash_sales,COALESCE(SUM(mt.cash_refunds),0) AS cash_refunds,
+             COALESCE(SUM(mt.cash_in),0) AS cash_in,COALESCE(SUM(mt.cash_out),0) AS cash_out,
+             COALESCE(SUM(mt.safe_drops),0) AS safe_drops,COALESCE(SUM(mt.opening_float),0) AS opening_float,
+             COALESCE(SUM(ss.expected_cash),0) AS expected_cash,COALESCE(SUM(ss.counted_cash),0) AS counted_cash,
+             COALESCE(SUM(ss.cash_variance),0) AS variance
+      FROM scoped_sessions ss LEFT JOIN movement_totals mt ON mt.session_id=ss.session_id
+      GROUP BY ss.business_date,ss.till_id,ss.till_code,ss.branch_name,ss.location_name
+      ORDER BY ss.business_date,ss.till_code`, [dateFrom, dateTo, branchId, locationId, tillId]);
+    res.json({ success: true, filters: { date_from: dateFrom, date_to: dateTo, branch_id: branchId, location_id: locationId, till_id: tillId }, data: result.rows });
+  } catch (error) { sendFinanceError(res, error, "Failed to load till performance report.", error.statusCode || 500); }
+});
+
+/** Branch petty-cash book: funding, expenses, reversals, and running balance.
+ * It is journal-derived so it cannot drift from the canonical GL balance. */
+router.get("/cross-branch-transfers", requirePermission("VIEW_CROSS_BRANCH_TRANSFERS"), async (req, res) => {
+  try {
+    const [dateFrom, dateTo] = reportDates(req);
+    const branchId = reportScope(req, req.query.branch_id);
+    const result = await query(`
+      SELECT t.transfer_id,t.transfer_no,t.transaction_date,t.amount,t.reason,t.reference,t.status,
+             t.transfer_type,t.source_branch_id,t.destination_branch_id,t.created_at,t.submitted_at,
+             t.approved_at,t.dispatched_at,t.received_at,t.received_amount,
+             sb.branch_code AS source_branch_code,sb.branch_name AS source_branch_name,
+             db.branch_code AS destination_branch_code,db.branch_name AS destination_branch_name,
+             fa.account_code AS source_account_code,ta.account_code AS destination_account_code
+      FROM fin.payment_account_transfer t
+      JOIN app.branch sb ON sb.branch_id=t.source_branch_id
+      JOIN app.branch db ON db.branch_id=t.destination_branch_id
+      JOIN fin.gl_account fa ON fa.account_id=t.from_payment_account_id
+      JOIN fin.gl_account ta ON ta.account_id=t.to_payment_account_id
+      WHERE t.company_id=(SELECT company_id FROM app.company_profile LIMIT 1)
+        AND t.transfer_type='CROSS_BRANCH' AND t.transaction_date BETWEEN $1::date AND $2::date
+        AND ($3::uuid IS NULL OR t.source_branch_id=$3 OR t.destination_branch_id=$3)
+      ORDER BY t.transaction_date DESC,t.created_at DESC
+      LIMIT 500
+    `, [dateFrom, dateTo, branchId]);
+    res.json({ success: true, count: result.rowCount, data: result.rows });
+  } catch (error) { sendFinanceError(res, error, "Failed to load cross-branch transfer report."); }
+});
+
+router.get("/petty-cash-activity", async (req, res) => {
+  try {
+    const [dateFrom, dateTo] = reportDates(req);
+    const branchId = reportScope(req, req.query.branch_id);
+    const result = await query(`
+      WITH petty AS (
+        SELECT pac.account_id,pac.branch_id,ga.account_code,ga.account_name,b.branch_code,b.branch_name
+        FROM fin.payment_account_control pac
+        JOIN fin.gl_account ga ON ga.account_id=pac.account_id
+        JOIN app.branch b ON b.branch_id=pac.branch_id
+        WHERE pac.account_role='PETTY_CASH' AND pac.is_active
+          AND ($3::uuid IS NULL OR pac.branch_id=$3::uuid)
+      ), movements AS (
+        SELECT p.branch_id,p.account_id,p.account_code,p.account_name,p.branch_code,p.branch_name,
+               j.journal_id,j.journal_no,j.journal_date,j.source_module,j.description,
+               COALESCE(SUM(l.debit),0) AS debit,COALESCE(SUM(l.credit),0) AS credit
+        FROM petty p JOIN fin.gl_journal_line l ON l.account_id=p.account_id
+        JOIN fin.gl_journal j ON j.journal_id=l.journal_id
+        WHERE j.journal_date BETWEEN $1::date AND $2::date
+        GROUP BY p.branch_id,p.account_id,p.account_code,p.account_name,p.branch_code,p.branch_name,
+                 j.journal_id,j.journal_no,j.journal_date,j.source_module,j.description
+      ), opening AS (
+        SELECT p.account_id,COALESCE(SUM(CASE WHEN j.journal_id IS NOT NULL THEN l.debit-l.credit ELSE 0 END),0) AS opening_balance
+        FROM petty p LEFT JOIN fin.gl_journal_line l ON l.account_id=p.account_id
+        LEFT JOIN fin.gl_journal j ON j.journal_id=l.journal_id AND j.journal_date < $1::date
+        GROUP BY p.account_id
+      )
+      SELECT m.*,o.opening_balance,
+             SUM(m.debit-m.credit) OVER (PARTITION BY m.account_id ORDER BY m.journal_date,m.journal_no,m.journal_id) + o.opening_balance AS running_balance,
+             CASE WHEN m.source_module='CASH_TRANSFER' AND m.debit>0 THEN 'FUNDING_IN'
+                  WHEN m.source_module='EXP' AND m.credit>0 THEN 'EXPENSE_OUT'
+                  WHEN m.source_module='EXP_VOID' AND m.debit>0 THEN 'EXPENSE_REVERSAL_IN'
+                  WHEN m.source_module IN ('CASH_TRANSFER','TRF') AND m.credit>0 THEN 'TRANSFER_OUT'
+                  ELSE 'OTHER' END AS activity_type
+      FROM movements m JOIN opening o ON o.account_id=m.account_id
+      ORDER BY m.journal_date,m.journal_no`, [dateFrom,dateTo,branchId]);
+    res.json({ success:true, filters:{date_from:dateFrom,date_to:dateTo,branch_id:branchId}, data:result.rows });
+  } catch (error) { sendFinanceError(res,error,"Failed to load petty cash activity report.",error.statusCode||500); }
+});
 
 /**
  * Week utilities

@@ -1,5 +1,33 @@
 # Test and Regression Log
 
+## 2026-09-25 — Phase 8C cash refund/session and date display correction
+
+| Check | Result | Evidence |
+|---|---|---|
+| Active paying session lookup | PASS-CODE | Cash refunds select the authenticated user's OPEN session in the active company. |
+| CASH_REFUND movement | PASS-CODE | One movement is inserted using the paying session's company/branch/location/till/session dimensions. |
+| Expected cash | PASS | `500 - 295 = 205`. |
+| Original sale session unaffected | PASS-CODE | No source lookup uses the original POS session; only the active operator session is used. |
+| Duplicate movement protection | PASS-CODE | Unique refund-settlement source index plus settlement remaining-balance guard. |
+| Non-cash refund | PASS-CODE | Till movement is conditional on `refund_method='CASH'`. |
+| Transaction rollback | PASS-CODE | Settlement and movement run inside the existing route transaction. |
+| Date-only formatter | PASS | `2026-09-25` maps to `25/09/2026` without `new Date()`. |
+| Authenticated acceptance | NOT RUN | Requires the controlled Administrator/TSE-20260925-000005 retest. |
+
+## 2026-09-25 — Customer return VAT journal correction
+
+| Check | Result | Evidence |
+|---|---|---|
+| POS return with VAT | PASS | Deterministic fixture balances net 250 + VAT 45 + COGS 100 against gross 295 + COGS 100. |
+| Zero-rated / exempt return | PASS | Deterministic fixtures omit VAT and balance net/gross at 250. |
+| Partial/full VAT return | PASS | Snapshot fixtures cover 22.50 and 45.00 VAT. |
+| Journal, inventory, and COGS reversal | PASS-CODE | Migration 42 creates separate sales/VAT, inventory, and COGS reversal lines. |
+| Rollback on forced imbalance | PASS-CODE | Route retains BEGIN/ROLLBACK; database posting asserts balance inside the transaction. |
+| Backend build and syntax | PASS | `npm run build`; `node --check src/routes/customerReturns.routes.js`. |
+| Regression test | PASS | `node --test test/customer-return-vat-journal.test.mjs`. |
+| `git diff --check` | PASS | Completed; only existing line-ending warnings were reported. |
+| Authenticated manual POST retest | NOT RUN | Requires controlled development credentials and the target return. |
+
 ## Test Rules
 - Do not mark a test `PASS` unless actually executed.
 - Mark tests not executed as `NOT RUN`.
@@ -838,3 +866,183 @@ Reverse Head Office request, reverse authorization, stock before/after, transit 
 | POS/return integration | PASS-CODE | Posted POS queueing and accepted-source return credit-note linkage use persisted tax snapshots; AR-from-POS duplicate fiscalisation is prevented by authority decision. |
 | Backend/frontend builds and route syntax | PENDING | Run after final route/UI validation. |
 | Authenticated browser acceptance | NOT RUN | Requires safe development session and verified mapping/configuration data. |
+
+## Phase 8 Till / cashier session management — 2026-09-24
+
+| Check | Result | Evidence |
+|---|---|---|
+| Migration 41 local application | PASS | Till configuration, tills, assignments, sessions, movements, denomination counts, and POS references exist in local development. |
+| Backend route syntax/build | PASS | `node --check` and backend build passed after till routes and POS integration. |
+| Frontend typecheck/build | PASS | `npx.cmd tsc -b --pretty false` and frontend build passed; only the existing large-bundle warning remains. |
+| Cash expectation deterministic test | PASS | `node backend/test/till-session.foundation.test.mjs` covers opening float, cash sale, non-cash exclusion, cash out, refund, safe drop, shortage, and overage. |
+| Feature default / POS gate | PASS-CODE | Till feature defaults false; server-side POS session enforcement is conditional on the feature flag. |
+| Manual cashier/till browser acceptance | PENDING | Requires an authorized development session, configured till, and controlled opening/closing/variance walkthrough. |
+
+## Phase 8B Till UX and assignment improvements — 2026-09-24
+
+| Check | Result | Evidence |
+|---|---|---|
+| Existing ERP identity reused | PASS-CODE | Assignment and eligible-user APIs use `sec.app_user`, `sec.user_branch`, and `sec.user_location`; no cashier login table was added. |
+| Zero opening float validation | PASS-CODE | UI defaults to `0`; backend rejects invalid/negative values and accepts zero. |
+| Admin opening another cashier | PASS-CODE | Server rejects cross-user opening unless the actor is ADMIN/MANAGER; session retains cashier and opened-by identities. |
+| Assignment and eligible-user APIs | PASS-CODE | Till assignment endpoint validates active user and branch/location authorization. |
+| Till UX / Setup correction | PASS | Payment account selector, assignment panel, activation controls, no-active-till message, and Setup Manage entry added. |
+| Frontend typecheck/build | PASS | `npx.cmd tsc -b --pretty false` and `npm.cmd run build` passed; existing large-bundle warning remains. |
+| Manual admin/cashier acceptance | PENDING | Requires safe authenticated browser sessions and controlled development data. |
+
+## Phase 8B acceptance defect correction — 2026-09-24
+
+| Check | Result | Evidence |
+|---|---|---|
+| TILL-01 database trace | PASS | Active TILL-01 maps to KAM GRAINS / Clean Beans Store and cash account 1000. |
+| Kenneth assignment/scope trace | PASS | Active `sec.user_till.can_open=true`, active branch access, and active Clean Beans Store location access were confirmed. |
+| Open context correction | PASS-CODE | Open form now sends branch and location explicitly; server validates the same authoritative context. |
+| Assigned Users visibility | PASS-CODE | Register uses active `sec.user_till` aggregation and refreshes after assignment. |
+| Cashier eligible tills | PASS-CODE | Dedicated `/my-tills` query requires active assignment, `can_open`, branch/location scope, active till, and no conflicting open session. |
+| Cashier/admin separation | PASS-CODE | Administrative register/configuration/assignment UI is limited to ADMIN/MANAGER; operational opening remains permission and backend controlled. |
+| Manual retest | PENDING | Required: admin self-open, admin-for-Kenneth, Kenneth self-open, Quick Sale recognition, close/reconcile, restart persistence, and branch negative test. |
+
+## Phase 8B final acceptance fix — 2026-09-25
+
+| Check | Result | Evidence |
+|---|---|---|
+| Quick Sale tax request trace | PASS | Quick Sale previously called `/api/tax/settings`; it now calls `/api/tax/operational-context`. Product tax treatment/rate fields remain catalogue-sourced. |
+| SALES operational tax access | PASS-CODE | `VIEW_TAX_OPERATIONAL` permits SALES only to read the minimal operational context. |
+| SALES tax administration denial | PRESERVED | `/api/tax/settings`, `/api/tax/codes`, and activation precheck remain protected by `VIEW_TAX_CONFIGURATION`. |
+| Explicit till context | PASS-CODE | Open requests submit branch and location; server validates company, active till, branch/location, cashier scope, and assignment. |
+| TILL-01 / Kenneth trace | PASS | Database records match KAM GRAINS / Clean Beans Store; active assignment and `can_open=true` confirmed. |
+| Authenticated runtime retest | PENDING | Requires admin and Kenneth browser sessions. |
+
+## Phase 8B explicit context and hydration correction — 2026-09-25
+
+| Check | Result | Evidence |
+|---|---|---|
+| Explicit branch authority | PASS-CODE | New open transaction validates request `branch_id`/`location_id` and uses validated till/session dimensions for inserts. |
+| Opening float zero | PASS-CODE | Explicit handler accepts numeric zero and opening movement inherits the inserted session dimensions. |
+| Context-aware till queries | PASS-CODE | Till, my-tills, sessions, assignment summary, and account queries wait for context and include branch/location keys. |
+| Login network classification | PASS-CODE | Login UI distinguishes 401, 403, 5xx, and no-response network failures; API base remains localhost:3000/api. |
+| TILL-01 database trace | PASS | Exact stored IDs and Kenneth authorization/assignment were previously confirmed. |
+| Authenticated runtime retest | PENDING | Correct-branch, wrong-branch, wrong-location, inactive, unassigned, can_open=false, manager-for-other, restart, and Quick Sale retests remain. |
+
+## Phase 8B zero opening-float correction — 2026-09-25
+
+| Check | Result | Evidence |
+|---|---|---|
+| Movement constraint inspection | PASS | `app.till_cash_movement.amount` is constrained by `amount > 0`; `cashier_session.opening_float` is constrained by `opening_float >= 0`. |
+| Zero opening float | PASS-CODE | Zero session opening persists `opening_float=0` and skips the opening movement row. |
+| Nonzero opening float | PASS-CODE | Positive opening float persists on the session and creates one positive `OPENING_FLOAT` movement. |
+| Expected cash from zero float | PASS | Deterministic test confirms zero float plus 10,000 cash sale equals expected cash 10,000. |
+| Negative opening float | PASS | Validation rejects negative values before movement insertion. |
+| Rollback integrity | PASS-CODE | Session and movement operations remain inside one transaction; errors rollback. |
+
+## Phase 8B/POS Quick Sale parameter correction — 2026-09-25
+
+| Check | Result | Evidence |
+|---|---|---|
+| Failed request trace | PASS | Quick Sale calls `POST /api/pos/sales`; failure was in the `sal.pos_sale` insert. |
+| `$12` mapping | PASS | `$12` was an unused null slot; `$13` was `session_id` and `$14` was `till_id`. Both database columns are UUID. |
+| SQL correction | PASS-CODE | Insert now uses `$12::uuid` for session and `$13::uuid` for till with no unused parameter. |
+| Fractional quantity / VAT | PASS-CODE | Existing calculation path remains unchanged: `0.1 × 2,500 = 250`, VAT `45`, gross `295`. |
+| Cash till movement | PASS-CODE | Successful CASH POS posting continues to create one `CASH_SALE` movement using the active session. |
+| Rollback / retry safety | PASS-CODE | POS transaction remains wrapped in BEGIN/ROLLBACK/COMMIT and idempotency handling remains intact. |
+| Backend/frontend validation | PASS | Backend build, route syntax, till tests, frontend TypeScript, and frontend build passed. |
+| Manual cash sale retest | PENDING | Requires retrying the controlled Quick Sale and verifying session expected cash becomes `295`. |
+
+## Phase 8B close-session authorization correction — 2026-09-25
+
+| Check | Result | Evidence |
+|---|---|---|
+| Close request trace | PASS | Frontend posts `counted_cash` to `POST /api/till-management/sessions/:sessionId/close`; no branch/location override is required. |
+| Session-authoritative authorization | PASS-CODE | Close middleware loads the company/session first and validates stored branch/location, cashier ownership, and `can_close`. |
+| Kenneth can close own session | PASS-CODE | Active `can_close=true` assignment is required; `can_reconcile` is not required. |
+| Exact count variance | PASS | Deterministic test confirms 295 counted against 295 expected produces variance 0. |
+| Shortage/overage | PASS | Deterministic tests cover -5 and +5 variance. |
+| Negative authorization cases | PASS-CODE | Different cashier, unauthorized branch/location, and `can_close=false` are rejected; manager policy remains permission controlled. |
+| Manual zero-variance close retest | PENDING | Required against the active development session. |
+
+## Phase 8C till ownership hardening
+
+Static verification covered the existing schema’s concurrent-till model, user/till and session uniqueness indexes, explicit `/my-tills` and `/my-session` scoping, own-session movement authorization, open-session deactivation protection, and cashier/admin rendering separation. Manual acceptance remains required for multi-user login/logout and restart persistence against the configured PostgreSQL instance.
+## Regression correction verification
+
+Static verification covers context-header normalization for till routes, dedicated `/my-session` usage in Quick Sale, restored manager controls, and retained cashier-only rendering. Manual retest is required for Kenneth’s TILL-01 response and Administrator’s TSE-20260925-000005 Quick Sale resume.
+
+## Phase 8D verification
+
+Static and deterministic checks cover positive movement validation, expected-cash bounding, session ownership, Safe Drop account preconditions, idempotency structure, and journal-link migration. Live PostgreSQL smoke tests for configured accounts and balanced journals remain manual acceptance steps.
+
+Development DB verification on `localhost:5432/kam_grains_db` confirmed migration 44 was absent and was then applied locally. The new columns/indexes now exist. Current local data has no till cash-account mappings and no Safe/Main Cash configuration, so Cash In/Safe Drop accounting smoke cases could not be executed without inventing account configuration. Existing concurrent sessions and refund linkage were verified; `RFD-20260925-000008` remains CASH, `TSE-20260925-000005`, `TILL-02`.
+| P8D-RUNTIME-001 | `/my-session` ambiguity correction | PASS-CODE | Qualified `ps.created_at`; backend route syntax/build and frontend checks pass. |
+| P8D-RUNTIME-002 | Live session/till/account inspection | PASS-DB | TILL-01 and TILL-02 are OPEN; both have no till cash mapping; only active CASH payment account is `1000 — Cash`; Safe/Main Cash points to `1000`. |
+| P8D-RUNTIME-003 | Open-session empty-state behavior | PASS-CODE/DB | Manager UI explains that all eligible tills have active sessions. |
+| P8D-RUNTIME-004 | Existing till account edit protection | PASS-CODE | PATCH preserves identity fields, validates active CASH accounts, and rejects account changes while OPEN/CLOSING. |
+| P8D-RUNTIME-005 | Manager active-session detail | PASS-CODE | Register-selected OPEN/CLOSING sessions load through the authorized detail endpoint and render totals/history/force-close controls. |
+| P8D-RUNTIME-006 | Movement panel state | PASS-CODE | Manager movement controls render only for the selected OPEN session; closed sessions show no movement form. |
+| P8D-RUNTIME-007 | Session history separation | PASS-CODE | Session History remains sourced from the session-list endpoint, separate from selected-session movement history. |
+| P8E-ACCOUNT-001 | Shared cash-control migration | PASS-DB | Local Phase 45 created active CASH controls `1110/TILL-CASH` and `1120/MAIN-SAFE`; existing accounts were preserved. |
+| P8E-ACCOUNT-002 | Payment-account setup UI | PASS-CODE | Manager-only Create Payment Account action uses active asset GL dropdowns and existing setup permission. |
+| P8E-ACCOUNT-003 | Safe-transfer precheck | PASS-CODE | Safe Drop/Cash In require active CASH mappings and different underlying GL accounts. |
+| P8E-RUNTIME-001 | Active manager session auto-selection | PASS-CODE | Manager/admin OPEN session is selected on page load; assignment selection is independent and register View Session remains explicit. |
+| P8E-RUNTIME-002 | Movement lock correction | PASS-CODE | Authoritative OPEN session is locked separately; optional account joins are not locked. |
+| P8E-RUNTIME-003 | Idempotency UUID behavior | PASS-CODE | UI creates a fresh UUID per submission and sends it with the request; retries of the same mutation reuse its captured variables. |
+| P8E-RUNTIME-004 | Static/runtime validation | PASS | Backend build, backend syntax, frontend TypeScript/build, focused Phase 8D suite, till-session foundation suite, and `git diff --check` passed. |
+| P8F-RUNTIME-001 | Opening sources and close dispositions | PASS-CODE | Migration, routes, and UI expose Main Safe, carry-forward, existing till balance, safe transfer, leave-in-till, and handover paths. |
+| P8F-RUNTIME-002 | Handover acceptance movement | PASS-CODE | Acceptance creates one receiving-session opening movement and rejects repeated acceptance. |
+| P8F-RUNTIME-003 | Phase 8F static validation | PASS | Focused Phase 8D/8F assertions, backend syntax/build, frontend TypeScript/build, and diff check pass. |
+| P8F-DB-ALIGN-001 | Local Phase 46 application | PASS-DB | Applied the existing Phase 46 SQL transactionally to `kam_grains_db`; handover table, session fields, constraints, foreign keys, and indexes verified. |
+| P8F-DB-ALIGN-002 | Opening Balance account availability | PASS-DB/CODE | Active ASSET accounts `1110` and `1120` are present; Opening Balances uses normal `/finance/gl-accounts` metadata without hardcoded account codes. |
+| P8F-DB-ALIGN-003 | MAIN-SAFE balance precondition | PASS-DB | Canonical payment-account balance view reports MAIN-SAFE and TILL-CASH available balance as zero; positive Main Safe opening remains correctly blocked until funding exists. |
+| P8F-DB-ALIGN-004 | Active-session visibility smoke | PASS | Two OPEN sessions remain present after migration; unauthenticated `/my-session` reaches the expected 401 authentication guard and no longer fails on the missing handover relation. Authenticated user-scoped browser/API acceptance remains pending credentials. |
+| P8F-DB-ALIGN-005 | Full focused regression suite | PASS | 24 focused backend tests passed, including refund, till foundation, Phase 8F assertions, payment-channel, EFRIS, VAT, and customer-return coverage. |
+| P8G-TRANSFER-001 | Transfer schema and lifecycle | PASS-CODE/DB | Phase 47 created durable transfer, idempotency, journal, status, and reversal fields/indexes locally. |
+| P8G-TRANSFER-002 | Journal atomicity | PASS-DB | Local rollback smoke created a 1000→1120 test journal, passed `fin.assert_balanced`, then rolled back with no persisted test data. |
+| P8G-TRANSFER-003 | Transfer permissions | PASS-CODE | View is limited to authorized finance roles; create/post/void excludes SALES and ordinary cashier roles. |
+| P8G-TRANSFER-004 | Transfer UI | PASS-CODE | Payment Account Control retains its existing table and adds a separate human-readable transfer form, preview, history, and void action. |
+| P8G-TRANSFER-005 | Live business acceptance | PENDING | Requires authenticated manager/finance session for the controlled UGX 1,000 1000→1120 transfer and subsequent Phase 8F Main Safe opening test. |
+| P8FG-UI-001 | Explicit movement rows and independent state | PASS-CODE | Cash In, Cash Out, and Safe Drop use separate fields, inline validation, permission messaging, previews, and per-row processing/reset behavior. |
+| P8FG-UI-002 | Real-time refresh invalidation | PASS-CODE | Successful movement refresh covers `my-session`, `my-session-history`, `till-sessions`, `till-session-detail`, and `cash-payment-accounts`; movement history refreshes through the session summary. |
+## 2026-09-29 — Phase 8H validation
+
+- Static validation pending final local run: TILL_CASH route syntax, backend build, frontend TypeScript/build, and `git diff --check`.
+- Attribution policy: persisted session branch wins over request branch; company-wide NULL journals remain excluded from blanket backfill.
+- Reporting policy: delivery/POS sales events and posted movement-derived COGS feed branch performance; AR/receipt collection is not counted as revenue.
+- Manual acceptance remains required for a new opening float, cash-in, safe drop, handover, dashboard recovery, and authenticated branch isolation.
+## 2026-09-30 — Phase 8I-A validation
+
+- Live database identity: `kam_grains_db` on localhost.
+- Live posting function inspected before modification.
+- Pre-migration posted voucher count: 26.
+- Voucher/journal branch mismatch diagnostic: zero rows.
+- Controlled rollback posting test: PASS; voucher branch and journal branch matched `7739b68b-6f16-4f67-9713-b29b2748d46e`, journal date matched voucher date, and Dr 100 / Cr 100 balanced.
+- Controlled rollback void test: PASS; reversal journal balanced 159,000/159,000 and second reversal was rejected.
+- No persistent test voucher or reversal remained after rollback.
+
+## Phase 8L UX correction
+
+- Create-user onboarding tests pass for optional fields, branch-filtered locations, atomic grants/defaults, and audit event wiring.
+- Frontend TypeScript and production build pass.
+
+## Phase 8L acceptance hardening
+
+- Local read-only snapshot confirmed Sophia is active SALES with TEST_B and TEST_B_STORE grants.
+- Local till ownership confirmed TILL-01 and TILL-02 are KAM/FG_STORE; TILL-01-BRANCH is inactive KAM/FG_STORE. No TEST_B till currently exists.
+- Dashboard stock query is branch-wide; Inventory stock query supports branch-wide and location-specific views.
+- Current local read-only comparison returns 19.800 KG for both dashboard (`inv.v_stock_on_hand`) and default inventory (`inv.v_stock_on_hand_active`) across TEST_B saleable locations. The earlier 6.3 KG display is not reproducible from current data and should be retested after clearing any selected-location/filter state; no accounting data was changed.
+# Phase 8L till ownership correction
+
+Static regression coverage now checks selected-till eligibility, SALES-role inclusion, assignment/opening distinction, and selected-till React Query keys. Local ownership snapshot: TILL-01 and TILL-02 are KAM / FG_STORE; TILL-01-BRANCH is inactive KAM / FG_STORE with no session. No TEST_B till was created or existing till mutated.
+# Phase 8M management target
+
+Added static coverage for module-local management branch/location state, selected-target till queries, and reusable authorization resolution. Manual TEST_B creation/session acceptance remains required in local development.
+
+Phase 8M runtime snapshot: `TSE-20261006-000010` is OPEN, cashier Sophia, opened by `kam.admin`, persisted TEST_B / TEST_B_STORE. PHASE5-AB-TEST is active, saleable, priced, and has 6.3 KG at TEST_B_STORE, but TEST_B_STORE itself is not saleable; POS exclusion is therefore expected. Dashboard stock cards now accept operating location scope.
+
+Phase 8N adds static coverage for management location listing, operational flags, deactivation guards, audit action, and HEAD_OFFICE setup permissions. No database configuration was changed during implementation.
+
+Phase 8N acceptance correction: inspected the local constraint before change, applied `phase_54_expand_audit_event_actions.sql` locally, and re-inspected the final definition. The controlled set now includes the user/branch/location actions emitted by the application. Static coverage verifies the forward migration, transaction boundary, safe error mapping, backend-message display, and responsive selectors. Sophia manual grant/default retest remains an operator acceptance step; no application code hardcodes Sophia, TEST_B, or location IDs.
+
+Phase 8N UI correction: focused regression coverage is 15/15. It verifies Setup derives `managedBranch` from declared state, handles no branch/no locations, refetches management locations after save, exposes location saleability editing, and applies responsive selector constraints. Frontend TypeScript and production build pass. Manual browser acceptance remains pending; local Sophia grants were not changed.
+
+Phase 8O-A local trace: `POS-20261007-000053` is POSTED at TEST_B_SHOP for 0.5 KG; snapshot net UGX 1,250, VAT UGX 225, gross UGX 1,475; stock cost UGX 500; journal `POS-20261007-001048` is balanced and branch-attributed to TEST_B. `TSE-20261007-000011` is OPEN for Sophia on `TESTB-SHOP-T01`; assignment is active with can_open=true, can_close=true, can_reconcile=false. Rollback-free data mutation was not performed. Phase 8O-A focused tests are 17/17; backend/frontend validation passes.
+
+Phase 8O-A2 focused coverage verifies no manager-mode fallback to `getMyTillSession`, target-scoped active/history/detail state, target reset behavior, management-location authorization for session force-close, and target validation for till assignments, eligible users, and opening options. Manual browser retest remains an operator acceptance step.

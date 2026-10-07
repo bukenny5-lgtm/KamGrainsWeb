@@ -134,7 +134,8 @@ export type BusinessFeatureCode =
   | "barcode"
   | "MULTI_LOCATION"
   | "tax_engine"
-  | "efris";
+  | "efris"
+  | "till_management";
 
 export type BusinessFeatureDefinition = {
   feature_code: BusinessFeatureCode;

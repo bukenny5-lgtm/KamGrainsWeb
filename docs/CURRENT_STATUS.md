@@ -1,4 +1,8 @@
 # Current Status
+## Checkpoint follow-up — return/refund journal account mapping
+
+PENDING VERIFICATION: Return journal RET-20261008-001049 visually shows account 4000 — Sales Revenue for the memo Refund due RET-20261008-000034, while the subsequent refund settlement journal uses 2100 — Customer Refunds Payable. This requires post-checkpoint tracing to determine whether the journal UI/account mapping is incorrect or whether return posting used the wrong GL account. No accounting change is made in this checkpoint.
+
 
 ## Phase 8K — Cross-branch cash funding and settlement — 2026-09-30
 
@@ -345,3 +349,11 @@ The Setup runtime crash is corrected. Admin now reaches a visible `Branches & Lo
 Phase 8O-A confirms POS accounting for the preserved TEST_B sale: balanced sales/VAT/COGS/inventory journal, automatic stock movement, and cash movement. Central session queries remain management-target scoped. Sophia can close her own assigned session (`can_close=true`) using carry-forward; manager-only cash disposition remains protected. No new migration was required.
 
 Phase 8O-A2 central Till Management scope correction is implemented locally. Admin management data is explicitly TEST_B/TEST_B_SHOP scoped, and the Admin KAM active session cannot appear in the TEST_B panel. No deployment or production change was performed.
+
+Phase 8P is implemented locally after checkpoint `b1d0a92`; Phase 55 is a forward migration and has not been deployed. Session history is reconciliation-specific and customer visibility is branch-associated without duplicating customer identities.
+# Phase 8Q status
+
+Implemented locally and ready for Finance refund acceptance. No new migration was required: repository permissions already separate `PROCESS_REFUND` from `POST_CUSTOMER_RETURN`, and `VOID_CUSTOMER_RETURN` remains restricted to Admin/Manager. No deployment, commit, or push was performed.
+## Phase 8R status
+
+Finance can authorize a cash refund through a selected eligible cashier till session without owning a till session. The return remains `POSTED`; refund settlement and till cash movement are idempotently linked and branch/location constrained.

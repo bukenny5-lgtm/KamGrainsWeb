@@ -570,3 +570,11 @@ Phase 8N UI acceptance correction replaced the undeclared `managementBranch` ref
 Phase 8O-A added POS cash-movement journal linkage and source fallback display, labels POS activity distinctly from the corresponding cash movement, and changed cashier close UX to use the supported `CARRY_FORWARD` disposition rather than silently requesting manager-only `LEAVE_IN_TILL`. Close/open success messages now identify the session.
 
 Phase 8O-A2 aligned central Till Management to an explicit management branch/location. Admin manager mode no longer seeds its active-session panel from the administrator's own operating-context session; session history, detail, force-close, cash movements, assignments, eligible users, and opening options are target-authorized. No migration, deployment, or production change was required.
+
+Phase 8P adds reconciliation-oriented session history fields and a session-specific management table. Phase 55 adds `sal.customer_branch`, backfills only reliable historical branch associations, preserves one company-wide customer identity, and enforces branch visibility in party lists plus POS, Sales Order, and Delivery customer selection.
+# Phase 8Q implementation
+
+Central Admin open-session feedback now uses the committed session response and selected cashier; cashier history reuses the management summary contract; posted return reposts are rejected before database posting; existing Phase 8C cash-refund session enforcement and idempotent movement behavior remain unchanged.
+## Phase 8R
+
+Added permission-scoped Finance access to Customer Returns, branch/location-scoped paying-session selection, and cash refund settlement through another user's OPEN till session. The existing Sales return workflow and Admin/Manager-only void policy remain unchanged.

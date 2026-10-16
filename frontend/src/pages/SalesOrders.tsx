@@ -26,6 +26,7 @@ import {
   getSalesOrders,
   updateSalesOrder,
 } from "@/api/client";
+import { useOperatingContext } from "@/lib/operatingContext";
 import { downloadXlsx } from "@/lib/excelExport";
 
 import Can from "@/components/Can";
@@ -281,6 +282,7 @@ function openPrintableWindow(title: string, bodyHtml: string) {
 }
 
 export default function SalesOrders() {
+  const operating = useOperatingContext();
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
@@ -316,8 +318,9 @@ export default function SalesOrders() {
   });
 
   const partiesQuery = useQuery({
-    queryKey: ["parties-for-sales-orders"],
+    queryKey: ["parties-for-sales-orders", operating.currentBranch?.branch_id],
     queryFn: getParties,
+    enabled: Boolean(operating.currentBranch?.branch_id),
   });
 
   const productsQuery = useQuery({

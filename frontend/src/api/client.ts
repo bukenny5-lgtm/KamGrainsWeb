@@ -134,7 +134,7 @@ export async function getTillAssignments(tillId: string, managementBranchId?: st
 export async function assignTillUser(tillId: string, payload: ApiPayload, managementBranchId?: string, managementLocationId?: string) { return (await api.post(`/till-management/tills/${encode(tillId)}/assignments`, payload, { params: { management_branch_id: managementBranchId, management_location_id: managementLocationId } })).data; }
 export async function createTill(payload: ApiPayload) { return (await api.post("/till-management/tills", payload)).data; }
 export async function updateTill(id: string, payload: ApiPayload) { return (await api.patch(`/till-management/tills/${encode(id)}`, payload)).data; }
-export async function getTillSessions(managementBranchId?: string, managementLocationId?: string) { return (await api.get("/till-management/sessions", { params: { management_branch_id: managementBranchId, management_location_id: managementLocationId || undefined } })).data; }
+export async function getTillSessions(managementBranchId?: string, managementLocationId?: string, selectedTillId?: string) { return (await api.get("/till-management/sessions", { params: { management_branch_id: managementBranchId, management_location_id: managementLocationId || undefined, selected_till_id: selectedTillId || undefined } })).data; }
 export async function getTillSession(id: string, managementBranchId?: string, managementLocationId?: string) { return (await api.get(`/till-management/sessions/${encode(id)}`, { params: { management_branch_id: managementBranchId, management_location_id: managementLocationId } })).data; }
 export async function getTillOpeningOptions(tillId: string, managementBranchId?: string, managementLocationId?: string) { return (await api.get("/till-management/opening-options", { params: { till_id: tillId, management_branch_id: managementBranchId, management_location_id: managementLocationId } })).data; }
 export async function getActiveTillSession() { return (await api.get("/till-management/sessions/active")).data; }
@@ -402,6 +402,11 @@ export async function getCustomerReturn(returnId: string) {
 
 export async function getCustomerReturnRefunds(returnId: string) {
   const response = await api.get(`/customer-returns/${encode(returnId)}/refunds`);
+  return response.data;
+}
+
+export async function getCustomerReturnRefundSessions(returnId: string) {
+  const response = await api.get(`/customer-returns/${encode(returnId)}/refund-sessions`);
   return response.data;
 }
 

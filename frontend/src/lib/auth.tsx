@@ -32,7 +32,7 @@ type AuthContextValue = {
   login: (user: AuthUser) => void;
   logout: () => void;
   updateUser: (user: AuthUser) => void;
-  hasRole: (roles: string[]) => boolean;
+  hasRole: (roles: readonly string[]) => boolean;
   mustChangePassword: boolean;
 };
 
@@ -254,7 +254,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(nextUser);
   }
 
-  function hasRole(roles: string[]) {
+  function hasRole(roles: readonly string[]) {
     if (!user) return false;
 
     const userRoles = (Array.isArray(user.roles) ? user.roles : []).map((role) =>

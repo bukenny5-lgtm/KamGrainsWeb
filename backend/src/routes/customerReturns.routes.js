@@ -201,6 +201,38 @@ router.get("/:id/refunds", requireAuth, requirePermission("VIEW_CUSTOMER_RETURNS
   } catch (error) { return res.status(500).json({ success: false, message: "Failed to load refund settlements.", error: error.message }); }
 });
 
+// Finance may authorize a cash refund through another authorized cashier's
+// OPEN session. The list is constrained to the posted return's company,
+// branch, and physical location; raw session identifiers are never exposed.
+router.get("/:id/refund-sessions", requireAuth, requirePermission("PROCESS_REFUND"), async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT s.session_id, s.session_no, s.status, s.opened_at,
+             t.till_code, t.till_name, s.branch_id, s.location_id,
+             b.branch_name, l.location_name, u.full_name AS cashier_name,
+             COALESCE((SELECT SUM(CASE WHEN m.movement_type IN ('OPENING_FLOAT','CASH_SALE','CASH_IN') THEN m.amount ELSE -m.amount END)
+                       FROM app.till_cash_movement m WHERE m.session_id=s.session_id),0) AS expected_cash
+      FROM sal.customer_return r
+      JOIN app.location rl ON rl.location_id=r.location_id
+      JOIN app.branch rb ON rb.branch_id=rl.branch_id
+      JOIN app.cashier_session s ON s.company_id=rb.company_id
+        AND s.branch_id=rl.branch_id AND s.location_id=r.location_id AND s.status='OPEN'
+      JOIN app.till t ON t.till_id=s.till_id AND t.company_id=s.company_id
+        AND t.branch_id=s.branch_id AND t.location_id=s.location_id AND t.is_active
+      JOIN app.branch b ON b.branch_id=s.branch_id
+      JOIN app.location l ON l.location_id=s.location_id
+      JOIN sec.app_user u ON u.user_id=s.cashier_user_id AND u.is_active
+      WHERE r.customer_return_id=$1
+        AND r.status='POSTED'
+        AND COALESCE(r.refund_due_amount,r.refund_due,0)-COALESCE(r.refund_settled_amount,0)>0
+        AND (rl.branch_id=$2 OR $3::boolean)
+      ORDER BY s.opened_at DESC`, [req.params.id, req.branchId, allBranches(req)]);
+    return res.json({ success: true, sessions: result.rows, data: result.rows });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: "Failed to load eligible paying till sessions." });
+  }
+});
+
 router.get("/:id", requireAuth, requirePermission("VIEW_CUSTOMER_RETURNS"), async (req, res) => {
   try {
     const header = await query(`
@@ -276,11 +308,15 @@ router.post("/:id/post", requireAuth, requirePermission("POST_CUSTOMER_RETURN"),
   try {
     await client.query("BEGIN");
     await setDatabaseUserContext(client, req);
+    const current = await client.query("SELECT status FROM sal.customer_return WHERE customer_return_id=$1::uuid FOR UPDATE", [returnId]);
+    if (!current.rowCount) { await client.query("ROLLBACK"); return res.status(404).json({ success: false, message: "Customer return not found." }); }
+    if (current.rows[0].status === "POSTED") { await client.query("ROLLBACK"); return res.status(409).json({ success: false, message: "This return has already been posted." }); }
+    if (current.rows[0].status === "VOID") { await client.query("ROLLBACK"); return res.status(409).json({ success: false, message: "This return has already been voided." }); }
     const result = await client.query("SELECT sal.post_customer_return($1::uuid) AS customer_return_id", [returnId]);
     await queueEfrisCreditNoteForReturn(client, returnId, req.user?.user_id || null);
     await client.query("COMMIT");
     return res.json({ success: true, customer_return_id: result.rows[0]?.customer_return_id, message: "Customer return posted." });
-  } catch (error) { await client.query("ROLLBACK").catch(() => {}); console.error("Customer return post failed", { returnId, error }); return res.status(error.statusCode || 400).json({ success: false, message: error.statusCode === 401 ? error.message : "Failed to post customer return." }); }
+  } catch (error) { await client.query("ROLLBACK").catch(() => {}); console.error("Customer return post failed", { returnId, error }); return res.status(error.statusCode || 400).json({ success: false, message: error.code === "P0001" || error.statusCode === 401 ? error.message : "Failed to post customer return." }); }
   finally { client.release(); }
 });
 
@@ -289,10 +325,10 @@ router.post("/:id/refund", requireAuth, requirePermission("PROCESS_REFUND"), asy
   try {
     await client.query("BEGIN");
     await setDatabaseUserContext(client, req);
-    const result = await client.query("SELECT sal.settle_customer_return_refund($1::uuid,$2::numeric,$3::text,$4::text,$5::text) AS refund_no", [req.params.id, req.body?.amount, String(req.body?.refund_method || "").toUpperCase(), req.body?.reference || null, req.body?.notes || null]);
+    const result = await client.query("SELECT sal.settle_customer_return_refund($1::uuid,$2::numeric,$3::text,$4::text,$5::text,$6::uuid) AS refund_no", [req.params.id, req.body?.amount, String(req.body?.refund_method || "").toUpperCase(), req.body?.reference || null, req.body?.notes || null, req.body?.paying_session_id || null]);
     await client.query("COMMIT");
     return res.json({ success: true, refund_no: result.rows[0].refund_no, message: "Refund settlement posted." });
-  } catch (error) { await client.query("ROLLBACK").catch(() => {}); return res.status(error.statusCode || 400).json({ success: false, message: error.statusCode === 401 ? error.message : "Failed to settle refund." }); }
+  } catch (error) { await client.query("ROLLBACK").catch(() => {}); return res.status(error.statusCode || 400).json({ success: false, message: error.code === "P0001" || error.statusCode === 401 ? error.message : "Failed to settle refund." }); }
   finally { client.release(); }
 });
 

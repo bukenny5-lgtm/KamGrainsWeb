@@ -46,3 +46,5 @@ Till creation persists the selected operating branch/location only after validat
 Location Setup uses a management target and never changes the authenticated operating context.
 
 User location grants and defaults remain subject to active location grant, active branch grant, and default-branch validation. Default changes unset the previous location default and write the access mutation plus audit event atomically.
+
+Phase 8P applies the same separation to customers: a company-wide party identity is associated with one or more operating branches, while ordinary branch users see and may use only active associations for their current branch.

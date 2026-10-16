@@ -17,6 +17,11 @@ const accessPanel = fs.readFileSync(new URL("../../frontend/src/components/Branc
 const setupPage = fs.readFileSync(new URL("../../frontend/src/pages/Setup.tsx", import.meta.url), "utf8");
 const permissions = fs.readFileSync(new URL("../src/middleware/permissions.js", import.meta.url), "utf8");
 const auditMigration = fs.readFileSync(new URL("../../database/migrations/phase_54_expand_audit_event_actions.sql", import.meta.url), "utf8");
+const customerMigration = fs.readFileSync(new URL("../../database/migrations/phase_55_customer_branch_scope.sql", import.meta.url), "utf8");
+const parties = fs.readFileSync(new URL("../src/routes/parties.routes.js", import.meta.url), "utf8");
+const customerScope = fs.readFileSync(new URL("../src/services/customerScope.service.js", import.meta.url), "utf8");
+const customerReturns = fs.readFileSync(new URL("../src/routes/customerReturns.routes.js", import.meta.url), "utf8");
+const customerReturnsPage = fs.readFileSync(new URL("../../frontend/src/pages/CustomerReturns.tsx", import.meta.url), "utf8");
 
 test("phase 8N exposes branch-scoped location setup management", () => {
   assert.match(branches, /router\.get\("\/management"/);
@@ -190,4 +195,40 @@ test("Dashboard stock cards include the operating location", () => {
   assert.match(dashboard, /loc\.location_id=\$2/);
   assert.match(dashboardPage, /\["dashboard-summary", branchId, locationId\]/);
   assert.match(dashboardPage, /getDashboardSummary\(branchId, locationId\)/);
+});
+
+test("phase 8P session history is reconciliation-scoped", () => {
+  assert.match(tills, /selected_till_id/);
+  assert.match(tills, /cash_sales/);
+  assert.match(tills, /cash_refunds/);
+  assert.match(tills, /cash_disposition/);
+  assert.match(tills, /SESSION_CLOSE/);
+  assert.match(tillPage, /SessionHistory/);
+  assert.match(tillPage, /Expected/);
+  assert.match(tillPage, /Counted/);
+  assert.match(tillPage, /Variance/);
+  assert.match(tillPage, /View Session/);
+});
+
+test("phase 8P customer visibility uses one identity and branch association", () => {
+  assert.match(customerMigration, /CREATE TABLE IF NOT EXISTS sal\.customer_branch/);
+  assert.match(customerMigration, /sales_order/);
+  assert.match(customerMigration, /pos_sale/);
+  assert.match(customerMigration, /delivery/);
+  assert.match(parties, /customer_branch/);
+  assert.match(parties, /canViewAllCustomers/);
+  assert.match(parties, /branch-access/);
+  assert.match(customerScope, /assertCustomerVisible/);
+  assert.match(tills.replace(/\r/g, ""), /selected_till_id/);
+});
+
+test("phase 8Q keeps till feedback and return controls consistent", () => {
+  assert.match(tillPage, /opened successfully for/);
+  assert.match(tillPage, /My Session History/);
+  assert.match(tillPage, /my-till-session-detail/);
+  assert.match(customerReturns, /This return has already been posted/);
+  assert.match(customerReturns, /SELECT status FROM sal\.customer_return[\s\S]*FOR UPDATE/);
+  assert.match(customerReturnsPage, /disabled=\{detail\.status !== "DRAFT"\}/);
+  assert.match(customerReturnsPage, /PROCESS_REFUND/);
+  assert.match(customerReturnsPage, /VOID_CUSTOMER_RETURN/);
 });

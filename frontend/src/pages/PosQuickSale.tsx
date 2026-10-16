@@ -64,7 +64,7 @@ export default function PosQuickSale() {
   const [quantityErrors, setQuantityErrors] = useState<Record<string, string>>({});
   const locationId = operating.currentLocation?.location_id;
   const productsQuery = useQuery({ queryKey: ["pos-products", search, locationId], queryFn: () => getPosProducts({ q: search, location_id: locationId }), enabled: Boolean(locationId) });
-  const partiesQuery = useQuery({ queryKey: ["pos-customers"], queryFn: getParties });
+  const partiesQuery = useQuery({ queryKey: ["pos-customers", operating.currentBranch?.branch_id], queryFn: getParties, enabled: Boolean(operating.currentBranch?.branch_id) });
   const taxSettingsQuery = useQuery({ queryKey: ["operational-tax-context"], queryFn: getOperationalTaxContext });
   const tillEnabled = hasFeature("till_management");
   const tillSessionQuery = useQuery({ queryKey: ["my-session", operating.currentBranch?.branch_id, locationId, user?.user_id], queryFn: getMyTillSession, enabled: tillEnabled && Boolean(operating.currentBranch?.branch_id && locationId), refetchInterval: tillEnabled ? 30000 : false });

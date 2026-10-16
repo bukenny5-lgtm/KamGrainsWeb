@@ -28,7 +28,7 @@ import type { LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
-import { ROLE_GROUPS, roleList } from "@/lib/permissions";
+import { ACTION_ROLES, ROLE_GROUPS, roleList } from "@/lib/permissions";
 import { useBusinessProfile } from "@/lib/businessProfile";
 import { useBusinessFeatures } from "@/lib/businessFeatures";
 import { useOperatingContext } from "@/lib/operatingContext";
@@ -38,7 +38,7 @@ type NavItem = {
   label: string;
   path: string;
   icon: LucideIcon;
-  roles: string[];
+  roles: readonly string[];
   feature?: BusinessFeatureCode;
 };
 
@@ -119,8 +119,7 @@ const navItems: NavItem[] = [
     label: "Customer Returns",
     path: "/customer-returns",
     icon: Receipt,
-    roles: roleList(ROLE_GROUPS.SALES_ACCESS),
-    feature: "sales",
+    roles: ACTION_ROLES.VIEW_CUSTOMER_RETURNS,
   },
   {
     label: "Receipts",

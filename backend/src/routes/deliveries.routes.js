@@ -4,6 +4,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { requirePermission } from "../middleware/permissions.js";
 import { getUserRoles } from "../middleware/permissions.js";
 import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
+import { assertCustomerVisible } from "../services/customerScope.service.js";
 
 const router = express.Router();
 router.use(requireAuth, requireLocationAccessWhenSpecified);
@@ -391,6 +392,9 @@ router.post(
 
       const salesOrder = soResult.rows[0];
       const finalCustomerId = customer_id || salesOrder.customer_id;
+
+      try { await assertCustomerVisible(req, finalCustomerId, (text, params) => client.query(text, params)); }
+      catch (error) { await client.query("ROLLBACK"); return res.status(error.statusCode || 403).json({ success: false, message: error.message }); }
 
       if (!finalCustomerId) {
         await client.query("ROLLBACK");

@@ -47,3 +47,11 @@ UI correction acceptance: Setup → Branches & Locations must load without a `ma
 Phase 8O-A acceptance evidence: trace `POS-20261007-000053` without recreating it; verify journal `POS-20261007-001048`, TEST_B branch attribution, balanced lines, UGX 1,250 net + UGX 225 VAT, UGX 500 COGS, and the linked TESTB-SHOP-T01 cash movement. Admin central management should select TEST_B / TEST_B_SHOP and refetch the existing OPEN Sophia session. Sophia's own close must use counted cash and carry-forward; do not select manager-only leave-in-till.
 
 Phase 8O-A2 acceptance: while operating as Admin in KAM/Clean Beans Store, open Till Management, select TEST_B / TEST_B_SHOP, and confirm the Active Session panel shows only the TEST_B target or `No active session for the selected management target.` Session History must include Sophia's closed TEST_B session, and View Session, cash movement, and Force Close must remain within TEST_B/TEST_B_SHOP. Switching back to KAM must clear the selected till/session before refetching.
+
+Phase 8P acceptance: Admin selects TEST_B / TEST_B_SHOP and sees Sophia's closed session as a reconciliation row with expected, counted, variance, disposition, and View Session. KAM sessions are excluded when the target is TEST_B. A normal TEST_B user sees only TEST_B-associated customers plus Walk-in; KAM-only customers are not selectable. No returns/refunds are modified in this phase.
+# Phase 8Q acceptance
+
+Central opening must identify the selected cashier and show the committed session number, till, and location; cashier history must show only that cashier's reconciliation summaries; posted return `RET-20261008-000034` must remain immutable and reject reposting; Finance refund acceptance must use an authorized user with an OPEN paying till session.
+### Finance refund acceptance
+
+In a Finance session, Customer Returns must show only posted returns in the operating branch/location. A cash refund must offer only eligible OPEN paying sessions at that location, permit a Finance processor to select another cashier's session, create one `CASH_REFUND`, and reduce expected cash by the settled amount.

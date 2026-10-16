@@ -1046,3 +1046,15 @@ Phase 8N UI correction: focused regression coverage is 15/15. It verifies Setup 
 Phase 8O-A local trace: `POS-20261007-000053` is POSTED at TEST_B_SHOP for 0.5 KG; snapshot net UGX 1,250, VAT UGX 225, gross UGX 1,475; stock cost UGX 500; journal `POS-20261007-001048` is balanced and branch-attributed to TEST_B. `TSE-20261007-000011` is OPEN for Sophia on `TESTB-SHOP-T01`; assignment is active with can_open=true, can_close=true, can_reconcile=false. Rollback-free data mutation was not performed. Phase 8O-A focused tests are 17/17; backend/frontend validation passes.
 
 Phase 8O-A2 focused coverage verifies no manager-mode fallback to `getMyTillSession`, target-scoped active/history/detail state, target reset behavior, management-location authorization for session force-close, and target validation for till assignments, eligible users, and opening options. Manual browser retest remains an operator acceptance step.
+
+Phase 8P focused coverage verifies target/till-scoped session history fields and customer branch-association architecture. Backend route syntax, frontend TypeScript/build, and manual TEST_B/Sophia acceptance remain required validation steps for this phase.
+# Phase 8Q validation
+
+Backend syntax/build, frontend TypeScript/build, focused branch-context tests `23/23`, and `git diff --check` passed. Read-only acceptance verification confirmed the posted return journal and single `CUSTOMER_RETURN` stock movement were unchanged.
+## Phase 8R static validation
+
+- Backend build: passed.
+- Changed backend route syntax: passed.
+- Frontend TypeScript: passed.
+- Frontend production build: passed.
+- `git diff --check`: passed (line-ending warnings only).

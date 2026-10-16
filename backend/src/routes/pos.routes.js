@@ -7,6 +7,7 @@ import { setDatabaseUserContext } from "../utils/uuid.js";
 import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
 import { calculateDocumentTotals, calculateTaxLine } from "../services/tax.service.js";
 import { queueEfrisPosSale } from "../services/efris.service.js";
+import { assertCustomerVisible } from "../services/customerScope.service.js";
 
 const router = express.Router();
 router.use(requireAuth,requireLocationAccessWhenSpecified);
@@ -493,6 +494,10 @@ router.post(
         return res.status(400).json({ success: false, message: "Customer is required for CREDIT POS sales; walk-in credit is not permitted." });
       }
       if (customerId) {
+        try { await assertCustomerVisible(req, customerId, (text, params) => client.query(text, params)); } catch (error) {
+          await client.query("ROLLBACK");
+          return res.status(error.statusCode || 403).json({ success: false, message: error.message });
+        }
         const customer = await client.query("SELECT 1 FROM app.party WHERE party_id = $1 AND party_type IN ('CUSTOMER', 'BOTH') AND is_active = true;", [customerId]);
         if (!customer.rowCount) {
           await client.query("ROLLBACK");

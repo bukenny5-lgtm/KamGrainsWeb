@@ -7,7 +7,7 @@ import type { BusinessFeatureCode } from "@/types/api";
 
 type ProtectedRouteProps = {
   children: ReactNode;
-  allowedRoles?: string[];
+  allowedRoles?: readonly string[];
   feature?: BusinessFeatureCode;
 };
 

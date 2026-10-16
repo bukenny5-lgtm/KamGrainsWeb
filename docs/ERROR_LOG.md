@@ -648,3 +648,11 @@ Phase 8N UI acceptance found a Setup runtime crash caused by `save()` and the br
 Phase 8O-A trace confirmed the TEST_B POS journal existed; the Till Journal dash came from `app.till_cash_movement.journal_id` being left null even though the source POS sale held `posted_journal_id`. The activity query now resolves that source linkage for display, and future cash-sale movements persist the journal link. The two visible cash-looking rows are the intentional `CASH_SALE` movement and `POS_SALE` activity, not double-counted cash.
 
 Phase 8O-A2 acceptance defect: central Till Management used `getMyTillSession`, causing the Admin KAM session to appear while managing TEST_B. The manager query path now derives active state only from the selected management target and rejects session/till sub-resource requests outside the selected branch/location.
+
+Phase 8P corrected two leakage risks: generic session history hid closed-session reconciliation values, and `/parties` was company-wide for ordinary users. Session history now uses persisted session/movement fields; customer lists and supplied customer IDs are branch-authorized through `sal.customer_branch`.
+# Phase 8Q correction
+
+Central open-session feedback now uses the committed response and cashier history uses the canonical session summary. Posted-return repost attempts return a safe business message before posting. Existing frontend build output retains only the pre-existing large-chunk warning.
+## Phase 8R validation
+
+No new runtime error was found during static validation. Business failures are returned as safe messages for missing/closed/wrong-scope paying sessions, invalid refund amounts, and already-settled refunds.

@@ -168,3 +168,9 @@ Phase 8O-A2 central-management controls are target-safe: session detail, force-c
 # Phase 8M management target
 
 Central Till Management may supervise a selected authorized branch/location, but cash controls, persisted session dimensions, opening-source rules, and branch attribution remain unchanged. Management target is not a global act-as-branch mode.
+# Phase 8Q return settlement boundary
+
+Return posting owns the commercial reversal and stock movement. Cash refund settlement only settles the refund liability/payment side; it does not reverse revenue, VAT, or COGS a second time. When till enforcement is enabled, a CASH refund requires the paying operator's OPEN session and creates one idempotent `CASH_REFUND` movement against that session.
+## Phase 8R cash refund note
+
+A Finance processor may authorize `CASH_REFUND` against a cashier's eligible OPEN session. The movement is linked to the refund settlement and paying session, reduces expected cash by the refund amount exactly once, and identifies the cashier through session context; the processor is stored separately as the settlement author.

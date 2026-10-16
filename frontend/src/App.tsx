@@ -27,7 +27,7 @@ import AuditLog from "@/pages/AuditLog";
 import Users from "@/pages/Users";
 import ChangePassword from "@/pages/ChangePassword";
 import Unauthorized from "@/pages/Unauthorized";
-import { ROLE_GROUPS, roleList } from "@/lib/permissions";
+import { ACTION_ROLES, ROLE_GROUPS, roleList } from "@/lib/permissions";
 import PaymentAccounts from "@/pages/PaymentAccounts";
 import OpeningBalances from "@/pages/OpeningBalances";
 import AccruedExpenses from "@/pages/AccruedExpenses";
@@ -154,7 +154,7 @@ const router = createBrowserRouter([
       {
         path: "customer-returns",
         element: (
-          <ProtectedRoute feature="sales" allowedRoles={roleList(ROLE_GROUPS.SALES_ACCESS)}>
+          <ProtectedRoute allowedRoles={ACTION_ROLES.VIEW_CUSTOMER_RETURNS}>
             <CustomerReturns />
           </ProtectedRoute>
         ),

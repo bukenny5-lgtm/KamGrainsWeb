@@ -379,3 +379,13 @@ Use a module-local management target rather than changing the authenticated user
 # Phase 8N decision
 
 Use the existing management scope service for Branches & Locations. Location deactivation is a guarded state change, not deletion, and saleability is independently configurable only while the location remains active.
+
+# Phase 8P decision
+
+Keep customer identity in `app.party` and add `sal.customer_branch` for branch visibility. This avoids duplicate identities while allowing Admin/Head Office to associate an existing customer with another branch.
+# Phase 8Q decision
+
+Reuse the Phase 8P session summary for cashier history and keep current activity separate. Reject repost attempts at the route boundary before invoking the posting function. Preserve existing capability mappings: Sales may create/post operational returns, while refund settlement remains `PROCESS_REFUND` and posted-return void remains `VOID_CUSTOMER_RETURN`; cash settlement still requires an open paying till session.
+## Phase 8R — Finance customer return/refund workflow
+
+Finance authorization is distinct from physical payment: a user with `PROCESS_REFUND` may settle a posted return through an eligible OPEN cashier session at the same company, branch, and location. Finance does not need to own or open a till session; the linked session identifies the paying cashier. Return posting remains responsible for revenue, VAT, COGS, and inventory reversals, so refund settlement posts only the liability/payment side.

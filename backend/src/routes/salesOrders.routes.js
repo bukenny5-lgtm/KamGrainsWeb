@@ -3,6 +3,7 @@ import { pool, query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { getUserRoles, requirePermission } from "../middleware/permissions.js";
 import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
+import { assertCustomerVisible } from "../services/customerScope.service.js";
 
 const router = express.Router();
 router.use(requireAuth, requireLocationAccessWhenSpecified);
@@ -199,6 +200,9 @@ router.post(
           message: "At least one sales order line is required."
         });
       }
+
+      try { await assertCustomerVisible(req, customer_id, (text, params) => client.query(text, params)); }
+      catch (error) { return res.status(error.statusCode || 403).json({ success: false, message: error.message }); }
 
       for (const line of lines) {
         if (!line.product_id) {
@@ -489,6 +493,9 @@ router.patch(
           message: "At least one sales order line is required."
         });
       }
+
+      try { await assertCustomerVisible(req, customer_id, (text, params) => client.query(text, params)); }
+      catch (error) { return res.status(error.statusCode || 403).json({ success: false, message: error.message }); }
 
       for (const line of lines) {
         if (!line.product_id) {

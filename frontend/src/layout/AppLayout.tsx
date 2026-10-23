@@ -102,6 +102,13 @@ const navItems: NavItem[] = [
     feature: "pos",
   },
   {
+    label: "POS Sales",
+    path: "/pos-sales",
+    icon: Receipt,
+    roles: roleList(ROLE_GROUPS.POS_ACCESS),
+    feature: "pos",
+  },
+  {
     label: "Deliveries",
     path: "/deliveries",
     icon: Truck,

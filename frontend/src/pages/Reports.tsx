@@ -32,6 +32,8 @@ import {
   getWeeklyProfitByProduct,
   getWeeklyManagementSummary,
   getCustomerConcentration,
+  getPosSalesSummary,
+  getPosSalesReport,
   getDeliveries,
   getExpenseVouchers,
   getGoodsReceiptSummary,
@@ -60,6 +62,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import WeekSelector from "@/components/WeekSelector";
+import { downloadXlsx } from "@/lib/excelExport";
 
 type AnyRecord = Record<string, any>;
 
@@ -206,13 +209,21 @@ function formatCell(column: string, value: unknown) {
 export default function Reports() {
   const operating = useOperatingContext();
   const branchId = operating.currentBranch?.branch_id || "";
+  const locationId = operating.currentLocation?.location_id || "";
   const [selectedReport, setSelectedReport] = useState("stock-on-hand");
   const [search, setSearch] = useState("");
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [weekDate, setWeekDate] = useState(new Date());
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0];
+  const todayStr = new Date().toISOString().split("T")[0];
+  const [posDateFrom, setPosDateFrom] = useState(monthStart);
+  const [posDateTo, setPosDateTo] = useState(todayStr);
 
   // Format week date for API calls
   const weekDateStr = weekDate.toISOString().split('T')[0];
+  const isPosReport = selectedReport.startsWith("pos-");
+  const posDateRangeValid = posDateFrom <= posDateTo;
+  const posParams = { from: posDateFrom, to: posDateTo, ...(locationId ? { location_id: locationId } : {}) };
 
   // Existing reports
   const stockQuery = useQuery({
@@ -326,6 +337,17 @@ export default function Reports() {
     queryFn: () => getCustomerConcentration(weekDateStr),
   });
 
+  const posSummaryQuery = useQuery({
+    queryKey: ["reports-pos-summary", posDateFrom, posDateTo, branchId, locationId],
+    queryFn: () => getPosSalesSummary(posParams),
+    enabled: isPosReport && posDateRangeValid,
+  });
+  const posProductQuery = useQuery({ queryKey: ["reports-pos-product", posDateFrom, posDateTo, branchId, locationId], queryFn: () => getPosSalesReport("by-product", posParams), enabled: isPosReport && posDateRangeValid });
+  const posCustomerQuery = useQuery({ queryKey: ["reports-pos-customer", posDateFrom, posDateTo, branchId, locationId], queryFn: () => getPosSalesReport("by-customer", posParams), enabled: isPosReport && posDateRangeValid });
+  const posCashierQuery = useQuery({ queryKey: ["reports-pos-cashier", posDateFrom, posDateTo, branchId, locationId], queryFn: () => getPosSalesReport("by-cashier", posParams), enabled: isPosReport && posDateRangeValid });
+  const posPaymentQuery = useQuery({ queryKey: ["reports-pos-payment", posDateFrom, posDateTo, branchId, locationId], queryFn: () => getPosSalesReport("by-payment", posParams), enabled: isPosReport && posDateRangeValid });
+  const posReturnsQuery = useQuery({ queryKey: ["reports-pos-returns", posDateFrom, posDateTo, branchId, locationId], queryFn: () => getPosSalesReport("returns", posParams), enabled: isPosReport && posDateRangeValid });
+
   // Normalize data
   const stockRows = normalizeArray(stockQuery.data, ["data", "stock", "rows"]);
   const movementRows = normalizeArray(movementsQuery.data, ["data", "movements", "rows"]);
@@ -353,6 +375,12 @@ export default function Reports() {
     ? [managementSummaryQuery.data.data]
     : [];
   const concentrationRows = normalizeArray(concentrationQuery.data, ["data"]);
+  const posSummaryRows = posSummaryQuery.data?.summary ? [posSummaryQuery.data.summary] : [];
+  const posProductRows = normalizeArray(posProductQuery.data, ["data"]);
+  const posCustomerRows = normalizeArray(posCustomerQuery.data, ["data"]);
+  const posCashierRows = normalizeArray(posCashierQuery.data, ["data"]);
+  const posPaymentRows = normalizeArray(posPaymentQuery.data, ["data"]);
+  const posReturnsRows = normalizeArray(posReturnsQuery.data, ["data"]);
 
   const reports: ReportDefinition[] = [
     {
@@ -715,6 +743,18 @@ export default function Reports() {
         "orders_count",
       ],
     },
+    {
+      key: "pos-summary",
+      title: "POS Sales Summary",
+      icon: WalletCards,
+      rows: posSummaryRows,
+      columns: ["gross_sales", "net_sales", "vat", "transactions", "walk_in_transactions", "named_customer_transactions", "cash", "mobile_money", "card", "bank_transfer", "credit"],
+    },
+    { key: "pos-by-product", title: "POS Sales by Product", icon: BarChart3, rows: posProductRows, columns: ["sku", "product_name", "qty_sold", "net_sales", "vat", "gross_sales", "returned_qty", "return_net", "refund_gross", "net_qty"] },
+    { key: "pos-by-customer", title: "POS Sales by Customer", icon: Users, rows: posCustomerRows, columns: ["customer", "transactions", "qty", "net", "vat", "gross", "returned_value", "refunded"] },
+    { key: "pos-by-cashier", title: "POS Sales by Cashier", icon: Users, rows: posCashierRows, columns: ["cashier", "transactions", "qty", "net", "vat", "gross", "returns", "refunds"] },
+    { key: "pos-by-payment", title: "POS Sales by Payment Method", icon: WalletCards, rows: posPaymentRows, columns: ["payment_method", "transactions", "gross_amount", "refunded", "net_collected"] },
+    { key: "pos-returns", title: "POS Returns & Refunds", icon: RefreshCw, rows: posReturnsRows, columns: ["return_no", "sale_no", "transaction_date", "customer", "cashier", "qty", "return_net", "vat_reversal", "refund_due", "refund_settled", "refund_remaining", "refund_status"] },
   ];
 
   const currentReport =
@@ -773,7 +813,13 @@ export default function Reports() {
     weeklyPurchasesQuery.isLoading ||
     weeklyProfitQuery.isLoading ||
     managementSummaryQuery.isLoading ||
-    concentrationQuery.isLoading;
+    concentrationQuery.isLoading ||
+    posSummaryQuery.isLoading ||
+    posProductQuery.isLoading ||
+    posCustomerQuery.isLoading ||
+    posCashierQuery.isLoading ||
+    posPaymentQuery.isLoading ||
+    posReturnsQuery.isLoading;
 
   const hasError =
     stockQuery.isError ||
@@ -815,6 +861,12 @@ export default function Reports() {
       weeklyProfitQuery.refetch(),
       managementSummaryQuery.refetch(),
       concentrationQuery.refetch(),
+      posSummaryQuery.refetch(),
+      posProductQuery.refetch(),
+      posCustomerQuery.refetch(),
+      posCashierQuery.refetch(),
+      posPaymentQuery.refetch(),
+      posReturnsQuery.refetch(),
     ]);
 
     setLastRefreshed(new Date());
@@ -828,21 +880,12 @@ export default function Reports() {
     );
   }
 
-  if (hasError) {
-    return (
-      <Alert variant="destructive">
-        <AlertTitle>Reports failed to load</AlertTitle>
-        <AlertDescription>
-          Check backend connection and confirm all report routes are available.
-        </AlertDescription>
-      </Alert>
-    );
-  }
-
   const CurrentIcon = currentReport.icon;
+  const currentPosQueryError = selectedReport.startsWith("pos-") && ([posSummaryQuery, posProductQuery, posCustomerQuery, posCashierQuery, posPaymentQuery, posReturnsQuery].some((query) => query.isError));
 
   return (
     <div className="space-y-6">
+      {hasError && <Alert><AlertTitle>Some reports are unavailable</AlertTitle><AlertDescription>This consolidated report is not yet available in branch-scoped mode. POS reports remain available through the POS Sales section.</AlertDescription></Alert>}
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Reports</h1>
@@ -869,6 +912,8 @@ export default function Reports() {
       selectedReport === "management-summary" ? (
         <WeekSelector selectedDate={weekDate} onDateChange={setWeekDate} />
       ) : null}
+
+      {isPosReport && <Card className="rounded-2xl border-blue-100 bg-blue-50/40 shadow-sm"><CardContent className="space-y-3 pt-6"><div className="grid gap-3 sm:grid-cols-2"><label className="text-sm font-medium">Date From<input className="mt-1 w-full rounded-md border bg-white px-3 py-2" type="date" value={posDateFrom} onChange={(event) => setPosDateFrom(event.target.value)} /></label><label className="text-sm font-medium">Date To<input className="mt-1 w-full rounded-md border bg-white px-3 py-2" type="date" value={posDateTo} onChange={(event) => setPosDateTo(event.target.value)} /></label></div>{!posDateRangeValid ? <p className="text-sm font-medium text-red-600">Date From cannot be after Date To.</p> : <p className="text-sm text-slate-600">Reporting Period: <b>{formatDate(posDateFrom)} – {formatDate(posDateTo)}</b>{locationId ? " · Current location" : ""}</p>}</CardContent></Card>}
 
       <div className="grid gap-6 md:grid-cols-3">
         <Card className="rounded-2xl shadow-sm">
@@ -944,12 +989,29 @@ export default function Reports() {
                   onChange={(event) => setSearch(event.target.value)}
                 />
               </div>
+              <Button
+                variant="outline"
+                onClick={() => downloadXlsx({
+                  fileName: `${currentReport.key}-${isPosReport ? `${posDateFrom}-to-${posDateTo}` : weekDateStr}.xlsx`,
+                  sheetName: currentReport.title,
+                  rows: filteredRows,
+                  columns: currentReport.columns.map((column) => ({
+                    header: column.replaceAll("_", " ").toUpperCase(),
+                    value: (row: AnyRecord) => row[column],
+                    type: ["qty", "transactions", "net", "vat", "gross", "amount", "refund", "return", "sales", "revenue"].some((part) => column.includes(part)) ? "number" as const : undefined,
+                  })),
+                })}
+              >
+                Export Excel
+              </Button>
             </div>
           </div>
         </CardHeader>
 
         <CardContent>
-          <div className="overflow-x-auto rounded-xl border">
+          {currentPosQueryError && <Alert className="mb-4"><AlertTitle>POS report unavailable</AlertTitle><AlertDescription>This POS report could not be loaded in the selected branch/date scope.</AlertDescription></Alert>}
+          {isPosReport && !currentPosQueryError && posDateRangeValid && filteredRows.length === 0 && <Alert className="mb-4"><AlertTitle>No records found</AlertTitle><AlertDescription>No records found for the selected reporting period.</AlertDescription></Alert>}
+          {currentReport.key === "pos-summary" && posSummaryRows[0] ? <div className="grid gap-4 md:grid-cols-3"><div className="grid grid-cols-2 gap-3 md:col-span-3"><div className="rounded-xl border bg-white p-4"><div className="text-xs text-slate-500">Gross Sales</div><div className="text-xl font-semibold">{formatMoney(posSummaryRows[0].gross_sales)}</div></div><div className="rounded-xl border bg-white p-4"><div className="text-xs text-slate-500">Net Sales</div><div className="text-xl font-semibold">{formatMoney(posSummaryRows[0].net_sales)}</div></div><div className="rounded-xl border bg-white p-4"><div className="text-xs text-slate-500">VAT</div><div className="text-xl font-semibold">{formatMoney(posSummaryRows[0].vat)}</div></div><div className="rounded-xl border bg-white p-4"><div className="text-xs text-slate-500">Transactions</div><div className="text-xl font-semibold">{formatNumber(posSummaryRows[0].transactions)}</div></div></div><div className="rounded-xl border bg-white p-4"><h3 className="font-semibold">Customers</h3><div className="mt-2 flex justify-between text-sm"><span>Walk-in</span><b>{posSummaryRows[0].walk_in_transactions || 0}</b></div><div className="flex justify-between text-sm"><span>Named</span><b>{posSummaryRows[0].named_customer_transactions || 0}</b></div></div><div className="rounded-xl border bg-white p-4"><h3 className="font-semibold">Payments</h3>{[["Cash",posSummaryRows[0].cash],["Mobile Money",posSummaryRows[0].mobile_money],["Card",posSummaryRows[0].card],["Bank Transfer",posSummaryRows[0].bank_transfer],["Credit",posSummaryRows[0].credit]].map(([label,value]) => <div key={String(label)} className="flex justify-between text-sm"><span>{label}</span><b>{formatMoney(value)}</b></div>)}</div><div className="rounded-xl border bg-white p-4"><h3 className="font-semibold">Returns / Refunds</h3>{[["Return Net",posSummaryRows[0].return_net_value],["Refund Due",posSummaryRows[0].refund_due],["Refund Settled",posSummaryRows[0].refund_settled],["Outstanding",Number(posSummaryRows[0].refund_due || 0)-Number(posSummaryRows[0].refund_settled || 0)],["Net After Returns",posSummaryRows[0].net_after_returns]].map(([label,value]) => <div key={String(label)} className="flex justify-between text-sm"><span>{label}</span><b>{formatMoney(value)}</b></div>)}</div></div> : <div className="overflow-x-auto rounded-xl border">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -1034,7 +1096,7 @@ export default function Reports() {
                 )}
               </TableBody>
             </Table>
-          </div>
+          </div>}
         </CardContent>
       </Card>
     </div>

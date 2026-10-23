@@ -375,6 +375,21 @@ export async function getPosSaleByNo(saleNo: string) {
   return response.data;
 }
 
+export async function getPosSales(params: Record<string, string | number> = {}) {
+  const response = await api.get("/pos-sales", { params });
+  return response.data;
+}
+
+export async function getPosSalesSummary(params: Record<string, string | number> = {}) {
+  const response = await api.get("/pos-sales/summary", { params });
+  return response.data;
+}
+
+export async function getPosSalesReport(kind: "by-product" | "by-customer" | "by-cashier" | "by-payment" | "returns", params: Record<string, string | number> = {}) {
+  const response = await api.get(`/pos-sales/${kind}`, { params });
+  return response.data;
+}
+
 export async function voidPosSale(saleId: string, reason: string) {
   const response = await api.post(`/pos/sales/${encode(saleId)}/void`, { reason });
   return response.data;

@@ -656,3 +656,17 @@ Central open-session feedback now uses the committed response and cashier histor
 ## Phase 8R validation
 
 No new runtime error was found during static validation. Business failures are returned as safe messages for missing/closed/wrong-scope paying sessions, invalid refund amounts, and already-settled refunds.
+
+## Phase 8S
+
+The receipt previously displayed gross `subtotal` without a VAT breakdown; printing now uses the persisted net and VAT fields. Live journal GL verification remains a database acceptance item and no historical accounting was changed.
+
+## Phase 8T
+
+The exact legacy consolidated-report guard remains in `backend/src/routes/reports.routes.js`: non-Head-Office users receive `These consolidated report views are not yet branch-scoped.` The POS Summary entry does not trigger this middleware because it calls `/api/pos-sales/summary`; unsafe legacy reports remain intentionally blocked.
+
+## Phase 8T-A
+
+POS grouped route failures now log the underlying server error with a route-specific label before returning a safe message. The frontend distinguishes a failed POS query from a successful zero-row result and displays `POS report unavailable` versus `No records found`. Invalid POS ranges are rejected with `Date From cannot be after Date To.`
+
+The grouped customer, cashier, and payment failures were traced to outer queries referencing `ret.*` after the lateral return join had been materialized into the `scoped_sales` CTE. The outer scope only exposes `scoped_sales s`; those references now use `s.return_net`, `s.return_vat`, and `s.refund_settled`.

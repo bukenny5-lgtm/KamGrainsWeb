@@ -37,6 +37,7 @@ import Efris from "@/pages/Efris";
 import TillManagement from "@/pages/TillManagement";
 import Reconciliations from "@/pages/Reconciliations";
 import PosQuickSale from "@/pages/PosQuickSale";
+import PosSales from "@/pages/PosSales";
 import CustomerReturns from "@/pages/CustomerReturns";
 import InternalStockRequests from "@/pages/InternalStockRequests";
 import InterSiteTransfers from "@/pages/InterSiteTransfers";
@@ -132,6 +133,14 @@ const router = createBrowserRouter([
         element: (
           <ProtectedRoute feature="pos" allowedRoles={roleList(ROLE_GROUPS.POS_ACCESS)}>
             <PosQuickSale />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "pos-sales",
+        element: (
+          <ProtectedRoute feature="pos" allowedRoles={roleList(ROLE_GROUPS.POS_ACCESS)}>
+            <PosSales />
           </ProtectedRoute>
         ),
       },

@@ -389,3 +389,9 @@ Reuse the Phase 8P session summary for cashier history and keep current activity
 ## Phase 8R — Finance customer return/refund workflow
 
 Finance authorization is distinct from physical payment: a user with `PROCESS_REFUND` may settle a posted return through an eligible OPEN cashier session at the same company, branch, and location. Finance does not need to own or open a till session; the linked session identifies the paying cashier. Return posting remains responsible for revenue, VAT, COGS, and inventory reversals, so refund settlement posts only the liability/payment side.
+
+**Phase 8S:** Use persisted POS tax snapshots for receipt presentation. Do not recalculate historical sale tax in the browser, change VAT rates, or alter return accounting functions. Finance refund filtering remains backend-parameterized and branch/location scoped.
+
+**Phase 8T:** Keep POS analytics on the persisted sale/location model and extend the existing `/api/pos-sales` route family. Do not weaken consolidated-report branch guards or mix POS with delivery reports. Use the existing XLSX helper for numeric exports.
+
+**Phase 8T-A:** POS reports use explicit transaction date ranges; existing weekly operational reports keep Monday–Sunday periods. Do not enable Customer Concentration or other unallowlisted consolidated routes until every aggregation layer carries branch attribution.

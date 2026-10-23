@@ -1058,3 +1058,26 @@ Backend syntax/build, frontend TypeScript/build, focused branch-context tests `2
 - Frontend TypeScript: passed.
 - Frontend production build: passed.
 - `git diff --check`: passed (line-ending warnings only).
+
+## Phase 8T validation
+
+- Backend `node --check src/routes/posSales.routes.js`: passed.
+- Backend `npm.cmd run build`: passed.
+- Frontend `npx.cmd tsc -b --pretty false`: passed.
+- Frontend `npm.cmd run build`: passed.
+- `git diff --check`: passed; only normal CRLF conversion warnings were reported.
+- Authenticated browser acceptance remains environment-dependent and was not claimed without a live session.
+
+## Phase 8T-A validation
+
+- POS report date controls use separate transaction-period state from weekly report state.
+- POS React Query keys include report type, date range, branch, and location.
+- Backend POS route syntax/build passed after adding range validation and error logging.
+- Customer Concentration and the `/api/reports` guard were statically audited; no unsafe guard was removed.
+- Live Sophia / TEST_B browser acceptance and database runtime reproduction of the prior grouped-route failures still require an authenticated running environment.
+
+## Phase 8S validation
+
+- Frontend `npx tsc -b --pretty false`: passed.
+- Receipt source inspection confirmed persisted POS tax snapshot fields; browser printing does not independently recalculate tax.
+- Backend route inspection confirmed repost and cumulative over-return protection remain authoritative.

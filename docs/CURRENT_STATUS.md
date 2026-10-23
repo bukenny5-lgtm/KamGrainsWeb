@@ -357,3 +357,11 @@ Implemented locally and ready for Finance refund acceptance. No new migration wa
 ## Phase 8R status
 
 Finance can authorize a cash refund through a selected eligible cashier till session without owning a till session. The return remains `POSTED`; refund settlement and till cash movement are idempotently linked and branch/location constrained.
+
+## Phase 8S status
+
+POS receipts now use persisted net/VAT/gross snapshot values. Finance refund filtering, badges, and settlement-session UX were refined. Partial-return and backend repost/over-return protections remain unchanged. No accounting migration or historical journal rewrite was performed.
+
+## Phase 8T-A status
+
+POS Reports now expose a visible current-month-to-today transaction range, validate reversed dates, and preserve date/branch/location scope during refresh and export. Weekly reports retain Monday–Sunday periods. Customer Concentration remains blocked for ordinary branch users because its source aggregation lacks branch attribution; no safety guard was removed and no migration was required.

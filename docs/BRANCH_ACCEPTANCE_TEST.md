@@ -1,5 +1,9 @@
 # TEST_B branch acceptance test
 
+## Phase 8S acceptance additions
+
+Print a tax-inclusive POS sale and confirm net/VAT/gross separately; confirm posted/void returns cannot be reposted; filter Finance returns by DUE and SETTLED; confirm settled returns cannot be settled again; verify a 1.000 KG sale with 0.500 KG returned leaves 0.500 KG returnable and rejects cumulative over-return.
+
 Use local development data only. Do not delete existing records automatically.
 
 1. Admin creates `test.branch.user` with a development password, Active status, and role `SALES`.

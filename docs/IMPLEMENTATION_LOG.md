@@ -578,3 +578,17 @@ Central Admin open-session feedback now uses the committed session response and 
 ## Phase 8R
 
 Added permission-scoped Finance access to Customer Returns, branch/location-scoped paying-session selection, and cash refund settlement through another user's OPEN till session. The existing Sales return workflow and Admin/Manager-only void policy remain unchanged.
+
+## Phase 8S
+
+Receipt printing uses `taxable_subtotal`, `tax_total`, `total_amount`, and line tax snapshots. Finance refund filtering is backend-parameterized and branch/location scoped; status badges and the settlement dialog were improved. Return accounting and historical records were left unchanged.
+
+## Phase 8T
+
+POS history now has responsive detail presentation, grouped summary hierarchy, return/refund filters, and filtered Excel export. Branch-safe POS summary, product, customer, cashier, payment, and returns reports use SQL aggregation under `/api/pos-sales`. No new migration, commit, push, or deployment was performed.
+
+## Phase 8T-A
+
+Reports now separates POS transaction date ranges from weekly operational periods. POS controls show the active range, reject reversed dates, include branch/location/date values in query keys, and preserve the selected range on Refresh All. The summary report uses grouped panels rather than a wide one-row display. Legacy report scope findings were documented without weakening the safety middleware.
+
+The three grouped POS SQL failures were corrected by using the `scoped_sales` CTE alias in outer aggregations. No schema or migration change was needed.

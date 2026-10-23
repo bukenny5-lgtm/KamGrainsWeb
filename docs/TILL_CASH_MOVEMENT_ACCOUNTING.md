@@ -1,5 +1,9 @@
 # Till Cash Movement Accounting
 
+## Phase 8S settlement UX
+
+The settlement dialog displays the selected session, till, cashier, and expected cash and warns/blocks an amount above expected cash at the UI boundary. Existing backend settlement and till movement accounting remains authoritative and unchanged.
+
 ## Runtime verification SQL
 
 ```sql

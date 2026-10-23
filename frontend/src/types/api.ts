@@ -77,6 +77,12 @@ export type PosSaleLine = {
   qty: string | number;
   unit_price: string | number;
   line_total: string | number;
+  tax_code?: string | null;
+  tax_treatment?: string | null;
+  tax_rate?: string | number | null;
+  taxable_amount?: string | number | null;
+  tax_amount?: string | number | null;
+  gross_amount?: string | number | null;
   lot_id?: string | null;
   lot_code?: string | null;
 };
@@ -94,8 +100,8 @@ export type PosSale = {
   amount_tendered?: string | number | null;
   change_amount: string | number;
   subtotal: string | number;
-  total_amount: string | number;
   taxable_subtotal?: string | number;
+  total_amount: string | number;
   tax_total?: string | number;
   status: string;
   cashier_name?: string | null;

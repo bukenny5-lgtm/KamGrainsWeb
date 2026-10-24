@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useRowInteraction } from "@/lib/useRowInteraction";
 import {
   Table,
   TableBody,
@@ -241,6 +242,7 @@ export default function StockMovements() {
   }, [rows, search]);
 
   const groupedMovements = useMemo(() => groupMovements(filteredRows), [filteredRows]);
+  const interaction = useRowInteraction(groupedMovements.map((movement) => movement.movement_id), setSelectedMovementId);
 
   const selectedMovement = useMemo(
     () => groupedMovements.find((movement) => movement.movement_id === selectedMovementId),
@@ -380,8 +382,10 @@ export default function StockMovements() {
                   groupedMovements.map((movement) => (
                     <TableRow
                       key={movement.movement_id}
-                      className="cursor-pointer"
-                      onDoubleClick={() => setSelectedMovementId(movement.movement_id)}
+                      tabIndex={0}
+                      className={`cursor-pointer outline-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-slate-400 ${interaction.isSelected(movement.movement_id) ? "bg-slate-100 ring-1 ring-inset ring-slate-300" : ""}`}
+                      onClick={(event) => interaction.select(movement.movement_id, event)}
+                      onDoubleClick={() => interaction.open(movement.movement_id)}
                     >
                       <TableCell className="whitespace-nowrap">
                         {formatDateTime(movement.movement_ts)}
@@ -421,7 +425,7 @@ export default function StockMovements() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => setSelectedMovementId(movement.movement_id)}
+                          onClick={(event) => { event.stopPropagation(); setSelectedMovementId(movement.movement_id); }}
                         >
                           <Eye className="mr-2 h-4 w-4" />
                           View

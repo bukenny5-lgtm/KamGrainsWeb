@@ -41,6 +41,7 @@ import PosSales from "@/pages/PosSales";
 import CustomerReturns from "@/pages/CustomerReturns";
 import InternalStockRequests from "@/pages/InternalStockRequests";
 import InterSiteTransfers from "@/pages/InterSiteTransfers";
+import StockTransferTasks from "@/pages/StockTransferTasks";
 import { OperatingContextProvider } from "@/lib/operatingContext";
 
 const router = createBrowserRouter([
@@ -87,6 +88,10 @@ const router = createBrowserRouter([
       {
         path: "stock-transfers",
         element: <ProtectedRoute feature="inventory" allowedRoles={roleList(["ADMIN","MANAGER","INVENTORY","HEAD_OFFICE"])}><InterSiteTransfers /></ProtectedRoute>,
+      },
+      {
+        path: "stock-transfer-tasks",
+        element: <ProtectedRoute feature="inventory" allowedRoles={roleList(["ADMIN","MANAGER","INVENTORY","PURCHASING","HEAD_OFFICE"])}><StockTransferTasks /></ProtectedRoute>,
       },
       {
         path: "stock-movements",

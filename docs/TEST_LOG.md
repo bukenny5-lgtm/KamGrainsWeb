@@ -1081,3 +1081,64 @@ Backend syntax/build, frontend TypeScript/build, focused branch-context tests `2
 - Frontend `npx tsc -b --pretty false`: passed.
 - Receipt source inspection confirmed persisted POS tax snapshot fields; browser printing does not independently recalculate tax.
 - Backend route inspection confirmed repost and cumulative over-return protection remain authoritative.
+## Phase 8U validation
+
+- POS detail: responsive modal, branch/location mapping, single status panel, contained line-table scrolling.
+- POS history: single selection, Ctrl-click toggle, Shift-range selection, double-click/View open parity, action-button propagation guard.
+- Stock Movements and Journals: shared selection/double-open behavior.
+- Excluded: editable return quantity, quick-sale cart, stock-count entry, journal-creation lines, and other input grids.
+
+## Phase 8U-A validation
+
+- POS View and double-click use the same stable opener.
+- Row action clicks stop propagation and do not duplicate modal opens.
+- Selection reconciliation is state-preserving when keys are unchanged, preventing render loops.
+- Controlled POS Dialog opens/closes from the selected sale number only.
+- Stock Movements, Journals, and Customer Returns row interactions remain intact.
+
+## Phase 8U-B validation
+
+- POS detail dialog uses a wide centered rectangle with internal vertical scrolling.
+- Metadata remains responsive and branch/location fields use the established contract.
+- Return Status and Refund Status appear once in the dedicated status panel.
+- Product lines scroll within their section; the overall modal does not horizontally scroll.
+# Phase 9B acceptance — 2026-10-25
+
+| Check | Result | Evidence |
+|---|---|---|
+| Migration applied | PASS | `phase_57_stock_request_hardening.sql` applied to `kam_grains_db`; cancellation columns present. |
+| API health | PASS | `GET /api/health` returned connected database `kam_grains_db`. |
+| Authenticated request list | PASS | Temporary signed development session for `kam.admin`; `GET /api/internal-stock-requests` returned 200 with progress fields and 8 rows. |
+| Create → submit → cancel | PASS | Development requests `ISR-20261025-000016` and `ISR-20261025-000017`; HTTP 201, 200, 200. |
+| Detail linked-transfer contract | PASS | Authenticated detail returned 200 and includes `linked_transfers`. |
+| Permission/lifecycle static tests | PASS | `backend/test/phase9b.stock-request.test.mjs`, 4/4 tests. |
+| Backend syntax/build | PASS | `npm run build` in `backend`. |
+| Frontend TypeScript/build | PASS | `npx tsc -b --pretty false` and `npm run build` in `frontend`. |
+
+The live acceptance used only the local development API/database. Production was not accessed, and no commit, push, or deployment was performed.
+# Phase 9B-C acceptance — 2026-10-25
+
+| Check | Result | Evidence |
+|---|---|---|
+| TEST_B Manager create with KAM source | PASS | `bukenya` created `ISR-20261025-000019` with KAM / FG_STORE and requested 2 KG. |
+| TEST_B Manager submit | PASS | Request submitted through API with HTTP 200. |
+| Requesting-manager approval blocked | PASS | Direct approval returned HTTP 403 with source-branch authorization message. |
+| Admin source-side visibility | PASS | `kam.admin` source-branch filtered list returned HTTP 200 and included the live request. |
+| Admin approval | PASS | Admin approved the request through API with HTTP 200; outstanding quantity remains available for later fulfilment. |
+| Source availability | PASS | `bukenya` received HTTP 200 from the branch-safe stock-on-hand endpoint; positive source-location rows were returned. |
+| Task queue foundation | PASS-CODE | New Requests and Ready for Fulfilment derived views added without new persisted statuses or dispatch posting. |
+
+Acceptance used local `kam_grains_db` only. Production was not accessed; no commit, push, or deployment was performed.
+# Phase 9B-D acceptance — 2026-10-25
+
+| Check | Result | Evidence |
+|---|---|---|
+| Submission reset | PASS-CODE | Submit success closes detail, preserves operating context, resets source/product/quantity/priority/type, and reports the request number. |
+| Duplicate submit protection | PASS-CODE | Submit action remains disabled while mutation is pending; backend accepts only DRAFT state. |
+| Business task detail | PASS-CODE | No `JSON.stringify` or `<pre>` task rendering; human routing/header/line/action sections are rendered in a wide modal. |
+| Admin approval scope | PASS | `kam.admin` approval scope returned `can_approve=true`; `bukenya` returned `can_approve=false` for the KAM-sourced request. |
+| Source approval quantities | PASS-CODE | Task detail allows bounded approval quantity entry and backend validates `0 <= approved_qty <= requested_qty`. |
+| Task transition refresh | PASS-CODE | Approval/rejection invalidate task and detail queries; derived queues move submitted work out of New Requests and approved outstanding work into Ready for Fulfilment. |
+| Focused tests | PASS | 8/8 Phase 9B/9B-C/D tests passed. |
+
+Live scope acceptance used local `kam_grains_db` and request `ISR-20261025-000019`. Production was untouched; no commit, push, or deployment was performed.

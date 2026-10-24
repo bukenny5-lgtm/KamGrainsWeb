@@ -670,3 +670,23 @@ The exact legacy consolidated-report guard remains in `backend/src/routes/report
 POS grouped route failures now log the underlying server error with a route-specific label before returning a safe message. The frontend distinguishes a failed POS query from a successful zero-row result and displays `POS report unavailable` versus `No records found`. Invalid POS ranges are rejected with `Date From cannot be after Date To.`
 
 The grouped customer, cashier, and payment failures were traced to outer queries referencing `ret.*` after the lateral return join had been materialized into the `scoped_sales` CTE. The outer scope only exposes `scoped_sales s`; those references now use `s.return_net`, `s.return_vat`, and `s.refund_settled`.
+## Phase 8U POS detail findings
+
+The blank branch display was a frontend/API contract consistency issue: the detail response was relying on an implicit `ps.*` shape while the review contract did not explicitly expose stable branch/location identifiers and aliases. The POS route now explicitly returns `sale_id`, `branch_id`, `location_id`, branch/location labels, canonical total aliases, and the canonical return/refund status fields. The UI falls back to persisted codes only when a label is unavailable.
+
+## Phase 8U-A maximum update depth
+
+Root cause: `useRowInteraction` received a new `keys` array on every render and unconditionally called `setSelected` from its reconciliation effect. Double-click updated the controlled POS Dialog state while the hook continued scheduling selection updates, causing repeated Radix Dialog/ref remounts and the maximum-update-depth error. The Radix Dialog was not mixing trigger and controlled modes; its ref stack was a symptom of the loop.
+# Phase 9B corrections — 2026-10-25
+
+- The first live list-query pass returned PostgreSQL `could not determine data type of parameter $1` because the scoped user parameter was not explicitly typed in the dynamically filtered query. The query now casts the scoped user identifier to `uuid`; development re-test returned HTTP 200.
+- Three temporary development acceptance requests (`ISR-20261025-000015`, `ISR-20261025-000016`, and `ISR-20261025-000017`) were created, submitted, and cancelled with a recorded reason; they are development-only data and do not affect production.
+# Phase 9B-C corrections — 2026-10-25
+
+- Manual acceptance found that requesting-branch Manager access was enough to expose approval. A source-branch scope middleware now blocks approval/rejection unless the actor is authorized for the selected source branch or is Admin/Head Office.
+- Manual acceptance also found the history filters were unlabeled and defaulted to the current requesting branch, hiding source-side work. Filters are now labeled and unscoped by default; backend branch/location authorization remains authoritative.
+# Phase 9B-D corrections — 2026-10-25
+
+- Submitted requests previously kept the selected detail active and repopulated the entry workflow. Submission now resets the entry form without changing operating context and prevents repeated submission while the request is pending.
+- Stock Transfer Tasks previously displayed raw API JSON. The modal now hides UUIDs/technical fields and renders an operational request/task detail.
+- Admin approval scope was available from the backend but was not surfaced in the task modal. The task modal now queries the authoritative scope endpoint and displays approval/rejection controls when permitted.

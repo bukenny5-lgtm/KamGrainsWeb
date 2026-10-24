@@ -1,5 +1,11 @@
 # Architecture Decision Record Log
 
+## Future phase — manager role separation — 2026-10-25
+
+- The current `MANAGER` role remains broad and retains its existing company-wide / overall operational authority for this checkpoint.
+- A future role redesign may introduce `BRANCH_MANAGER` for branch/location-scoped authority and `OVERALL_MANAGER` / `GENERAL_MANAGER` for broader multi-branch/company authority.
+- This separation is documented only and is intentionally not implemented in Phase 9B–9B-D.
+
 ## Phase 8C — Cash refund ownership and date semantics — 2026-09-25
 
 - A cash refund belongs to the active session that physically pays it, never the original sale session. The refund settlement stores the paying session snapshot for auditability.
@@ -395,3 +401,22 @@ Finance authorization is distinct from physical payment: a user with `PROCESS_RE
 **Phase 8T:** Keep POS analytics on the persisted sale/location model and extend the existing `/api/pos-sales` route family. Do not weaken consolidated-report branch guards or mix POS with delivery reports. Use the existing XLSX helper for numeric exports.
 
 **Phase 8T-A:** POS reports use explicit transaction date ranges; existing weekly operational reports keep Monday–Sunday periods. Do not enable Customer Concentration or other unallowlisted consolidated routes until every aggregation layer carries branch attribution.
+## Phase 8U review-table interaction
+
+Review/history tables use a small shared row interaction hook for visual selection, Ctrl-click toggling, Shift-range selection, Escape clearing, and optional double-click open. This is selection-only and creates no bulk financial operations. Editable entry grids remain excluded.
+# Phase 9B decisions — 2026-10-25
+
+- All operational lists use the shared row interaction standard: single click selects, Ctrl/Cmd click toggles, Shift click selects a range, double-click opens detail, Escape clears selection, and selection is reconciled when filters remove rows.
+- Stock-request fulfilment controls remain in the stock-transfer workflow. The request detail is intentionally progress/read-only for allocation, dispatch, and receipt until Phase 9C.
+- Branch scope is fail-closed. Manager, Inventory, and Purchasing users do not gain company-wide request visibility merely from their operational role; all-branch visibility is separately granted.
+# Phase 9B-C decisions — 2026-10-25
+
+- Manager permissions remain additive and unchanged; branch/location grants determine where those permissions apply. Approval is now source-branch scoped, with Admin/Head Office override.
+- Preferred source location and live source availability are advisory request context. Product choices are restricted to positive current stock at the selected source location, but requested quantity may exceed that availability for valid partial fulfilment.
+- Stock Transfer Tasks are a derived active-work queue over existing request/transfer records. New Requests and Ready for Fulfilment are not new persisted statuses and completed/rejected/cancelled records remain in history.
+- Request and task lists use visible labels, dependent branch/location filters, explicit Clear Filters, wide rectangular detail modals, and the shared row interaction standard.
+# Phase 9B-D decisions — 2026-10-25
+
+- Successful submission closes the active request detail and resets only request-entry fields; operating branch/location context is preserved.
+- Operational task detail must never use raw API JSON as its primary presentation. It uses human labels, business references, quantity tables, current-availability labels, contextual actions, and the standard wide modal.
+- Admin/Head Office approval is represented by the backend approval-scope contract and rendered in the task modal; requesting-branch-only Managers remain read-only for source-side approval.

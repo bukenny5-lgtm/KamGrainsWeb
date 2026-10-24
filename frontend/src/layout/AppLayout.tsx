@@ -65,6 +65,7 @@ const navItems: NavItem[] = [
     feature: "inventory",
   },
   { label: "Internal Stock Requests", path: "/stock-requests", icon: ClipboardList, roles: ["ADMIN","MANAGER","INVENTORY","PURCHASING","HEAD_OFFICE"], feature: "inventory" },
+  { label: "Stock Transfer Tasks", path: "/stock-transfer-tasks", icon: ClipboardList, roles: ["ADMIN","MANAGER","INVENTORY","PURCHASING","HEAD_OFFICE"], feature: "inventory" },
   { label: "Inter-Site Transfers", path: "/stock-transfers", icon: ArrowRightLeft, roles: ["ADMIN","MANAGER","INVENTORY","HEAD_OFFICE"], feature: "inventory" },
   {
     label: "Purchasing",

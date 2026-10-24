@@ -853,8 +853,9 @@ export async function getStockDetail(productId: string, locationId: string, lotI
   return response.data;
 }
 
-export async function getInternalStockRequests(branchId?: string | null) {
-  const response = await api.get("/internal-stock-requests", { params: branchId ? { branch_id: branchId } : undefined });
+export async function getInternalStockRequests(filters?: string | Record<string, string | null | undefined>) {
+  const params = typeof filters === "string" ? (filters ? { branch_id: filters } : undefined) : filters;
+  const response = await api.get("/internal-stock-requests", { params });
   return response.data;
 }
 export async function getInternalStockRequest(id: string) {
@@ -871,6 +872,18 @@ export async function submitInternalStockRequest(id: string) {
 }
 export async function approveInternalStockRequest(id: string, lines: ApiPayload[]) {
   const response = await api.post(`/internal-stock-requests/${encode(id)}/approve`, { lines });
+  return response.data;
+}
+export async function cancelInternalStockRequest(id: string, reason: string) {
+  const response = await api.post(`/internal-stock-requests/${encode(id)}/cancel`, { reason });
+  return response.data;
+}
+export async function getInternalStockRequestApprovalScope(id: string) {
+  const response = await api.get(`/internal-stock-requests/${encode(id)}/approval-scope`);
+  return response.data;
+}
+export async function rejectInternalStockRequest(id: string, reason: string) {
+  const response = await api.post(`/internal-stock-requests/${encode(id)}/reject`, { reason });
   return response.data;
 }
 export async function getStockTransfer(id: string) {

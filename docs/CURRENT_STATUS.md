@@ -365,3 +365,19 @@ POS receipts now use persisted net/VAT/gross snapshot values. Finance refund fil
 ## Phase 8T-A status
 
 POS Reports now expose a visible current-month-to-today transaction range, validate reversed dates, and preserve date/branch/location scope during refresh and export. Weekly reports retain Monday–Sunday periods. Customer Concentration remains blocked for ordinary branch users because its source aggregation lacks branch attribution; no safety guard was removed and no migration was required.
+## Phase 8U status
+
+Transaction review UX is standardized for POS detail/history, Stock Movements, and Journals. POS branch/location contract aliases are explicit, status duplication is removed from the detail layout, and review rows support non-operational selection. Production remains untouched; no commit, push, or deployment was performed.
+
+Phase 8U-A removes the POS double-click maximum-update-depth loop. The shared row hook now avoids no-op state writes, and POS View/double-click use the same stable detail opener.
+
+Phase 8U-B corrects the POS detail modal presentation with a wide rectangular, responsive, sectioned layout. Interaction behavior and other modules remain unchanged.
+# Phase 9B status — 2026-10-25
+
+Phase 9B stock-request hardening is implemented in the working tree. Development migration 57 is applied to `kam_grains_db`. The request API now separates viewing, creation, submission, approval, and cancellation authority; validates branch scope; records cancellation metadata and named business events; and exposes request/transfer progress. The Internal Stock Requests page has standard filters, shared row interaction, and a wide progress modal without Phase 9C transfer-creation controls. Static, backend, frontend, and authenticated development API acceptance passed. Production was untouched; no deployment or commit was made.
+# Phase 9B-C status — 2026-10-25
+
+Phase 9B-C acceptance corrections are implemented. Approval is source-branch scoped with Admin/Head Office override; source-side visibility is preserved; preferred source location and live advisory availability are available during request creation; positive-stock product filtering and requested-greater-than-available warnings are implemented; filters are labeled and dependent; and Stock Transfer Tasks now provides derived New Requests and Ready for Fulfilment queues. Full transfer fulfilment, dispatch, receipt, reservation, lot allocation, and transit posting remain deferred to Phase 9C/9D+.
+# Phase 9B-D status — 2026-10-25
+
+Phase 9B-D request/task UX corrections are implemented. Submission resets the request-entry workflow while preserving operating context; Stock Transfer Tasks now use business-facing detail instead of raw JSON; Admin/Head Office and source-authorized approval actions are visible from the authoritative scope contract; approval quantity entry and rejection reason handling are available; and task/history refresh follows approval decisions. Phase 9C fulfilment remains deferred.

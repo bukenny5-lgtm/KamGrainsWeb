@@ -19,6 +19,7 @@ import {
 
 import Can from "@/components/Can";
 import { ACTION_ROLES } from "@/lib/permissions";
+import { useRowInteraction } from "@/lib/useRowInteraction";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -271,6 +272,8 @@ export default function Journals() {
     setIsDetailsOpen(true);
   }
 
+  const journalInteraction = useRowInteraction(filteredRows.map((row) => row.journal_no), openDetails);
+
   function resetCreateForm() {
     setJournalDate(new Date().toISOString().slice(0, 10));
     setDescription("");
@@ -496,7 +499,7 @@ export default function Journals() {
                   </TableRow>
                 ) : (
                   filteredRows.map((row) => (
-                    <TableRow key={row.journal_id || row.journal_no}>
+                    <TableRow key={row.journal_id || row.journal_no} tabIndex={0} onClick={(event) => journalInteraction.select(row.journal_no, event)} onDoubleClick={() => journalInteraction.open(row.journal_no)} className={`cursor-pointer outline-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-slate-400 ${journalInteraction.isSelected(row.journal_no) ? "bg-slate-100 ring-1 ring-inset ring-slate-300" : ""}`}>
                       <TableCell className="font-medium">
                         {row.journal_no}
                       </TableCell>
@@ -521,7 +524,7 @@ export default function Journals() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => openDetails(row.journal_no)}
+                          onClick={(event) => { event.stopPropagation(); openDetails(row.journal_no); }}
                         >
                           <Eye className="mr-2 h-4 w-4" />
                           View

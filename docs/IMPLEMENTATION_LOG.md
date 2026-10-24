@@ -592,3 +592,29 @@ POS history now has responsive detail presentation, grouped summary hierarchy, r
 Reports now separates POS transaction date ranges from weekly operational periods. POS controls show the active range, reject reversed dates, include branch/location/date values in query keys, and preserve the selected range on Refresh All. The summary report uses grouped panels rather than a wide one-row display. Legacy report scope findings were documented without weakening the safety middleware.
 
 The three grouped POS SQL failures were corrected by using the `scoped_sales` CTE alias in outer aggregations. No schema or migration change was needed.
+## Phase 8U
+
+Standardized POS transaction review UX and added the reusable `useRowInteraction` behavior. Updated POS Sales, Stock Movements, and Journals; Customer Returns already had safe double-click/View handling and remains excluded from editable return-entry rows. No accounting, posting, VAT, return/refund, or historical data behavior was changed.
+
+## Phase 8U-A
+
+Corrected the shared row hook's unconditional selection reconciliation update and stabilized the POS detail opener with `useCallback`. View and double-click now share one controlled-dialog open path. No accounting, API, or Radix trigger behavior was changed.
+## Phase 9B — Stock request hardening and operational list UX (2026-10-25)
+
+- Added additive migration `phase_57_stock_request_hardening.sql` for cancellation audit metadata and status filtering support.
+- Separated `VIEW_STOCK_REQUEST`, `SUBMIT_STOCK_REQUEST`, and `CANCEL_STOCK_REQUEST` from creation/approval permissions; company-wide request visibility remains an explicit `VIEW_ALL_STOCK_REQUESTS` capability.
+- Hardened stock-request scope, cancellation, linked-transfer reservation checks, and named business audit events for create, submit, approve, reject, and cancel.
+- Expanded list/detail responses with request date, source/requesting locations, requester, product search, allocated/dispatched/received quantities, and linked transfer progress.
+- Standardized the Internal Stock Requests list with filters, shared row interaction, wide detail modal, and read-only fulfilment progress. Transfer creation remains deferred to Phase 9C.
+## Phase 9B-C — Acceptance corrections and transfer-task foundation (2026-10-25)
+
+- Restored the existing Manager request visibility capability and added source-branch-only approval enforcement for ordinary users; Admin/Head Office retain override authority.
+- Added backend-authoritative approval scope response and source-side list visibility, including authorized Admin/source filtering.
+- Added Preferred Source Location and live stock-on-hand availability to request creation. Only positive-stock products are offered when a source location is selected; requested quantity remains independent and can exceed availability.
+- Added labeled responsive filters with dependent location refresh, date-order validation, and explicit Clear Filters.
+- Added derived Stock Transfer Tasks views for New Requests and Ready for Fulfilment using existing request history and canonical outstanding quantities. Dispatch/receipt execution remains deferred.
+## Phase 9B-D — Request reset and business-facing task detail (2026-10-25)
+
+- Successful request submission now closes the active request detail, resets source/product/quantity/priority/type fields, preserves operating branch/location context, and gives explicit request-number feedback.
+- Replaced raw JSON task detail with a wide business-facing modal showing request routing, human names, status, priority, line quantities, current source availability, approval quantities, and contextual approval/rejection actions.
+- Added real source-side approval quantity entry and rejection reason handling in Stock Transfer Tasks. Approval refreshes task/history queries; approved outstanding work classifies as Ready for Fulfilment.

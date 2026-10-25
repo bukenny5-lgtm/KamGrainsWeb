@@ -392,3 +392,14 @@ Phase 9B-D request/task UX corrections are implemented. Submission resets the re
 # Phase 9C status — source fulfilment preparation
 
 Implemented locally: source-side partial allocation against approved requests, multiple linked draft transfers, same-branch source-location selection, lot-level preparation, live transactional revalidation, advisory-lock concurrency protection, idempotency, and task-modal controls. Migration 58 was applied and verified on local `kam_grains_db`; no dispatch, receiving, stock decrement, transit journal, or accounting was added. Authenticated fulfilment scenarios remain pending; production is untouched and no commit/push/deployment was made.
+
+# Phase 9D status — dispatch execution
+
+Implemented locally: durable `TEX-YYYYMMDD-######` dispatch executions, full and partial source dispatch, source-to-TRANSIT `TRANSFER` movements, Reserved-to-In Transit conversion, source authorization, idempotency/concurrency protection, destination-scoped Incoming Receipt task search, and business-facing dispatch errors. Migration 59 is applied to local `kam_grains_db`. Live evidence includes `TEX-20261026-000002` (0.100 KG), `TEX-20261026-000004` (0.300 KG partial), and `TEX-20261026-000005` (0.200 KG completion) for `ISR-20261025-000019`; no destination receipt was posted. GL-neutral treatment is preserved. Production is untouched; no commit, push, or deployment has been made.
+
+# Phase 9D-A status — destination receipt task visibility
+
+Investigated `TEX-20261026-000006`: it is a persisted `DISPATCHED` execution for `TRF-20260922-000004`, linked to `ISR-20260922-000004`, with 0.200 outstanding at Test Branch B Store. The missing-task defect was active-branch filtering in the receipt query; visibility is now based on persisted destination branch/location plus authorized user-location scope. Receipt rows return business request numbers, support operational filters and a read-only detail modal, and never post receipt stock. No commit, push, deployment, or Phase 9E work was performed.
+# Phase 9D-B status — internal stock request history restored
+
+The history regression was caused by the Phase 9D dispatch-total scalar subquery referencing `t.stock_transfer_id` inside an aggregate lateral query without grouping it, causing the history endpoint to return an error while the UI showed its normal empty state. The query now aggregates dispatch totals by request safely. Requesting-side OR source-side authorization, Admin/Head Office scope, permanent lifecycle history, progress quantities, and separate active queues are preserved. Local DB acceptance confirmed Bukenya sees 16 authorized requests and KAM Admin sees 19, including the three known ISR references.

@@ -21,7 +21,7 @@ test("Phase 9C preparation is transactional, linked, partial, and idempotent", (
   assert.match(page, /internal-stock-requests/);
   assert.match(page, /stock-transfers/);
   assert.match(historyPage, /qty_allocated/);
-  assert.match(route, /FILTER \(WHERE t\.status IN\('DRAFT','IN_TRANSIT'\)\)/);
+  assert.match(route, /FILTER \(WHERE t\.status IN\('DRAFT','PARTIALLY_DISPATCHED','IN_TRANSIT'\)\)/);
   assert.match(reservationsRoute, /status = 'DRAFT'/);
 });
 

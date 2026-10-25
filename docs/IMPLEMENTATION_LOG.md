@@ -637,3 +637,23 @@ Corrected the shared row hook's unconditional selection reconciliation update an
 - Added branch-safe `/api/stock-reservations` drill-down and Inventory Stock reservation columns/modal.
 - Fulfilment validation now subtracts active source-location/product/lot reservations before allowing a new draft.
 - Added structured business conflict payloads for request-outstanding and available-stock conflicts.
+
+## Phase 9D — dispatch execution and incoming receipt work
+
+- Added forward-only `phase_59_stock_transfer_dispatch_executions.sql` with `inv.stock_transfer_dispatch`, dispatch lines, execution numbering, idempotency, and `PARTIALLY_DISPATCHED` status support.
+- Hardened the existing dispatch route with source branch/location authorization, transfer/line locks, active reservation and physical-stock revalidation, partial quantities, execution-linked source-to-TRANSIT movement, lot/cost preservation, and same-transaction audit.
+- Added destination-scoped `/stock-transfers/incoming-receipts` execution search and task visibility. Stock Transfer Tasks now exposes Awaiting Dispatch and Incoming Receipts work queues.
+- Preserved GL-neutral internal transfer treatment and deferred destination receipt posting, receipt variance, and saleable destination stock.
+
+## Phase 9D-A — destination receipt visibility and business references
+
+- Investigated persisted `TEX-20261026-000006`; it is `DISPATCHED`, linked to `TRF-20260922-000004` and `ISR-20260922-000004`, with 0.200 outstanding for Test Branch B Store.
+- Corrected Incoming Receipt eligibility to use persisted execution destination fields and destination user-location authorization rather than incorrectly requiring the active branch header to equal the destination.
+- Added `request_no` joins, legacy fallback labels, source/destination/date filters, dispatch detail retrieval, and consistent React Query invalidation.
+- Added read-only Incoming Receipt detail presentation and replaced dispatch success native alert with an in-page application notification. Destination receipt posting remains deferred.
+## Phase 9D-B — internal stock request history
+
+- Verified `ISR-20261025-000019`, `ISR-20261025-000020`, and `ISR-20260922-000004` remain persisted in `kam_grains_db`.
+- Fixed the Phase 9D dispatch aggregation query so historical request listing no longer fails on an ungrouped correlated transfer column.
+- Preserved canonical requesting-branch OR preferred-source-branch scope, Admin/Head Office broader scope, all lifecycle statuses, filters, progress quantities, and detail authorization.
+- Added regression coverage and a business-friendly history load error state.

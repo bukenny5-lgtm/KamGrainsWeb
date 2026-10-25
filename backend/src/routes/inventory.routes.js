@@ -96,17 +96,19 @@ router.get("/stock-on-hand", requireAuth, async (req, res) => {
   LEFT JOIN inv.v_lot_unit_cost vuc
     ON vuc.lot_id = soh.lot_id
   LEFT JOIN LATERAL (
-    SELECT COALESCE(SUM(tl.qty), 0) AS reserved_qty
+    SELECT COALESCE(SUM(CASE WHEN t.status='DRAFT' THEN tl.qty WHEN t.status='PARTIALLY_DISPATCHED' THEN tl.qty-COALESCE(dispatched.dispatched_qty,0) ELSE 0 END), 0) AS reserved_qty
     FROM inv.stock_transfer t
     JOIN inv.stock_transfer_line tl ON tl.stock_transfer_id = t.stock_transfer_id
-    WHERE t.source_location_id = soh.location_id AND t.status = 'DRAFT'
+    LEFT JOIN LATERAL (SELECT SUM(dl.qty) AS dispatched_qty FROM inv.stock_transfer_dispatch_line dl JOIN inv.stock_transfer_dispatch d ON d.dispatch_id=dl.dispatch_id WHERE dl.stock_transfer_line_id=tl.stock_transfer_line_id AND d.status='DISPATCHED') dispatched ON true
+    WHERE t.source_location_id = soh.location_id AND t.status IN ('DRAFT','PARTIALLY_DISPATCHED')
       AND tl.product_id = soh.product_id AND tl.lot_id IS NOT DISTINCT FROM soh.lot_id
   ) reserved ON true
   LEFT JOIN LATERAL (
-    SELECT COALESCE(SUM(tl.qty - COALESCE(tl.received_qty, 0)), 0) AS in_transit_qty
+    SELECT COALESCE(SUM(COALESCE(dispatched.dispatched_qty,CASE WHEN t.status IN ('IN_TRANSIT','RECEIVED_WITH_VARIANCE','RECEIVED') THEN tl.qty ELSE 0 END) - COALESCE(tl.received_qty, 0)), 0) AS in_transit_qty
     FROM inv.stock_transfer t
     JOIN inv.stock_transfer_line tl ON tl.stock_transfer_id = t.stock_transfer_id
-    WHERE t.source_location_id = soh.location_id AND t.status = 'IN_TRANSIT'
+    LEFT JOIN LATERAL (SELECT SUM(dl.qty) AS dispatched_qty FROM inv.stock_transfer_dispatch_line dl JOIN inv.stock_transfer_dispatch d ON d.dispatch_id=dl.dispatch_id WHERE dl.stock_transfer_line_id=tl.stock_transfer_line_id AND d.status='DISPATCHED') dispatched ON true
+    WHERE t.source_location_id = soh.location_id AND t.status IN ('PARTIALLY_DISPATCHED','IN_TRANSIT','RECEIVED_WITH_VARIANCE','RECEIVED')
       AND tl.product_id = soh.product_id AND tl.lot_id IS NOT DISTINCT FROM soh.lot_id
   ) in_transit ON true
   ${whereClause}

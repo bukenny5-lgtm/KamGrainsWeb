@@ -694,6 +694,18 @@ Root cause: `useRowInteraction` received a new `keys` array on every render and 
 - Submitted requests previously kept the selected detail active and repopulated the entry workflow. Submission now resets the entry form without changing operating context and prevents repeated submission while the request is pending.
 - Stock Transfer Tasks previously displayed raw API JSON. The modal now hides UUIDs/technical fields and renders an operational request/task detail.
 - Admin approval scope was available from the backend but was not surfaced in the task modal. The task modal now queries the authoritative scope endpoint and displays approval/rejection controls when permitted.
+
+# Phase 9D dispatch corrections — 2026-10-26
+
+- The local database used `ck_stock_transfer_status` rather than the expected `stock_transfer_status_check`; the Phase 9D migration now drops both possible legacy constraint names before adding `PARTIALLY_DISPATCHED` support.
+- The first live dispatch probe reached a stale pre-Phase-9D backend process and created the legacy movement for `TRF-20261025-000014`. That source-to-TRANSIT movement was preserved and reconciled into execution `TEX-20261026-000002`; no receipt was posted.
+- Existing `audit.event` permits named business actions only for `business.event`. Dispatch therefore uses the existing `U` audit action with `business_event=TRANSFER_DISPATCHED` in the row payload, preserving the database audit contract.
 ## Phase 9C-A — fulfilment progress disappearing after navigation
 
 Investigation of `ISR-20261025-000019` found the allocation persisted correctly in `kam_grains_db`: transfer `TRF-20261025-000013` remains `DRAFT`, linked to the request line, with quantity `0.500`. The defect was read-model/cache consistency: task fulfilment success refreshed only task-local React Query keys, while request history, transfer, and stock queries were left stale; the linked-transfer detail aggregate also counted cancelled transfers. The active allocation formula is now consistently `SUM(stock_transfer_line.qty)` for `DRAFT` and `IN_TRANSIT` transfers only. Fulfilment refresh invalidates task, request-history/detail, transfer, and stock query families so remounts reconstruct from authoritative API data.
+# Phase 9D-A resolved issue
+
+- `TEX-20261026-000006` was persisted correctly but disappeared from Incoming Receipts when the active branch header represented the source branch. The query now scopes from persisted destination fields and destination authorization, and returns `request_no` with a legacy fallback instead of exposing UUIDs.
+## Phase 9D-B resolved issue
+
+- Internal Stock Requests history appeared empty because the endpoint returned a SQL error after Phase 9D added a correlated dispatch sum inside an aggregate lateral query. The frontend treated the failed response as an ordinary empty list. The dispatch sum is now aggregated by request and the page exposes a distinct history-load error state.

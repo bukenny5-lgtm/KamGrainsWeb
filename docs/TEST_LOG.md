@@ -1139,6 +1139,22 @@ Acceptance used local `kam_grains_db` only. Production was not accessed; no comm
 | Admin approval scope | PASS | `kam.admin` approval scope returned `can_approve=true`; `bukenya` returned `can_approve=false` for the KAM-sourced request. |
 | Source approval quantities | PASS-CODE | Task detail allows bounded approval quantity entry and backend validates `0 <= approved_qty <= requested_qty`. |
 | Task transition refresh | PASS-CODE | Approval/rejection invalidate task and detail queries; derived queues move submitted work out of New Requests and approved outstanding work into Ready for Fulfilment. |
+
+## Phase 9D validation — 2026-10-26
+
+| Focused Phase 9D tests | PASS | 13/13 Phase 9B–9D tests passed, including durable execution, partial dispatch, movement, no-GL, receipt queue, and deferral assertions. |
+| Backend syntax/build | PASS | Changed-route syntax checks and `npm.cmd run build` passed. |
+| Frontend validation | PASS | `npx.cmd tsc -b --pretty false` and `npm.cmd run build` passed. |
+| Migration | PASS | `phase_59_stock_transfer_dispatch_executions.sql` applied to local `kam_grains_db`; status constraint compatibility was corrected and re-applied. |
+| Live full dispatch | PASS | `TRF-20261025-000014` 0.100 KG produced execution `TEX-20261026-000002`; source-to-TRANSIT movement and destination receipt task verified. |
+| Live partial dispatch | PASS | `TRF-20261025-000013` dispatched 0.300 KG as `TEX-20261026-000004`, then the remaining 0.200 KG as `TEX-20261026-000005`; no destination receipt was posted. |
+| Inventory invariant | PASS | Source API moved On Hand from 1.300 to 0.900 and Reserved from 0.600 to 0.200 for the 0.400 KG dispatch; Available remained 0.700. |
+| Movement traceability | PASS | Dispatch movements are `TRANSFER`, source Clean Beans Store → KAM GRAINS Transit, preserving lot `P5AB-A-20260922` and unit cost `1000.0000`; one movement was linked per execution. |
+| Incoming receipt scope/search | PASS | TEST_B Manager search for `TEX-20261026-000002` returned one NEW receipt task with 0.100 KG outstanding. |
+| Duplicate/over/unauthorized | PASS | Same idempotency key returned 200 idempotent; 0.300 KG over-dispatch returned 409 with remaining quantity; TEST_B-only dispatch attempt returned 403. |
+| Accounting | PASS | No GL journal was created by dispatch; receipt, saleable destination stock, VAT, AR, AP, and COGS remained untouched. |
+
+All live checks used development `kam_grains_db`. Production was untouched; no commit, push, or deployment was performed.
 | Focused tests | PASS | 8/8 Phase 9B/9B-C/D tests passed. |
 
 Live scope acceptance used local `kam_grains_db` and request `ISR-20261025-000019`. Production was untouched; no commit, push, or deployment was performed.
@@ -1162,3 +1178,16 @@ Live scope acceptance used local `kam_grains_db` and request `ISR-20261025-00001
 - Inventory exposes On Hand, Reserved, Available, In Transit, and reservation-integrity fields.
 - Reservation drill-down is branch/location scoped and returns active prepared transfer references.
 - Stock-consuming module audit is documented separately; unrelated module redesign was not made.
+
+- Local DB inspection confirmed `TEX-20261026-000006` persisted with `DISPATCHED` status, `TRF-20260922-000004`, `ISR-20260922-000004`, and 0.200 outstanding receipt quantity.
+- Focused Phase 9C/9D tests passed: 5/5.
+- Phase 9D-A static receipt visibility/reference tests passed after addition.
+- Backend syntax check and frontend TypeScript/Vite production build passed.
+- No destination receipt, stock receipt movement, GL posting, commit, push, or deployment was performed.
+## Phase 9D-B validation
+
+- Local DB verification confirmed the three known ISR records and their persisted lifecycle timestamps.
+- Direct scope checks returned all three known requests for Bukenya and KAM Admin.
+- Focused Phase 9C/9D/9D-A/9D-B tests passed: 11/11.
+- Backend build, frontend TypeScript/Vite build, and `git diff --check` passed.
+- No request data was modified; no receipt, accounting, commit, push, or deployment was performed.

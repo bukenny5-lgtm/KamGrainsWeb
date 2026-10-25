@@ -594,8 +594,18 @@ export async function createStockTransfer(payload: ApiPayload) {
   return response.data;
 }
 
-export async function dispatchStockTransfer(id: string) {
-  const response = await api.post(`/stock-transfers/${encode(id)}/dispatch`);
+export async function dispatchStockTransfer(id: string, payload: ApiPayload = {}) {
+  const response = await api.post(`/stock-transfers/${encode(id)}/dispatch`, payload);
+  return response.data;
+}
+
+export async function getIncomingReceiptTasks(params: ApiPayload = {}) {
+  const response = await api.get("/stock-transfers/incoming-receipts", { params });
+  return response.data;
+}
+
+export async function getStockTransferDispatch(id: string) {
+  const response = await api.get(`/stock-transfers/dispatches/${encode(id)}`);
   return response.data;
 }
 

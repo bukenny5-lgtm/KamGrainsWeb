@@ -1142,3 +1142,23 @@ Acceptance used local `kam_grains_db` only. Production was not accessed; no comm
 | Focused tests | PASS | 8/8 Phase 9B/9B-C/D tests passed. |
 
 Live scope acceptance used local `kam_grains_db` and request `ISR-20261025-000019`. Production was untouched; no commit, push, or deployment was performed.
+## Phase 9C validation
+
+- Backend route and permission syntax checks passed.
+- Frontend TypeScript build passed.
+- `git diff --check` passed; only normal line-ending conversion warnings were reported.
+- Migration 58 applied and verified against local `kam_grains_db`; the idempotency column and both indexes are present.
+- Authenticated partial/multiple-transfer, over-allocation, over-stock, unauthorized, and race scenarios remain pending; production was not accessed.
+
+### Phase 9C-A progress persistence
+
+- Local DB inspection: `ISR-20261025-000019` → `TRF-20261025-000013`, `DRAFT`, linked quantity `0.500`.
+- Canonical active allocation query returned `0.500`; dispatched quantity returned `0`.
+- Added focused assertions for active-status filtering and cross-screen React Query invalidation.
+
+### Phase 9C-B reservation validation
+
+- Reservation source remains persisted transfer lines; no physical movement or journal is created by preparation.
+- Inventory exposes On Hand, Reserved, Available, In Transit, and reservation-integrity fields.
+- Reservation drill-down is branch/location scoped and returns active prepared transfer references.
+- Stock-consuming module audit is documented separately; unrelated module redesign was not made.

@@ -420,3 +420,10 @@ Review/history tables use a small shared row interaction hook for visual selecti
 - Successful submission closes the active request detail and resets only request-entry fields; operating branch/location context is preserved.
 - Operational task detail must never use raw API JSON as its primary presentation. It uses human labels, business references, quantity tables, current-availability labels, contextual actions, and the standard wide modal.
 - Admin/Head Office approval is represented by the backend approval-scope contract and rendered in the task modal; requesting-branch-only Managers remain read-only for source-side approval.
+## Phase 9C — source fulfilment preparation
+
+Source fulfilment reuses `inv.stock_transfer` and `inv.stock_transfer_line`. The canonical preparation balance is `approved_qty - supplied_qty - active DRAFT/IN_TRANSIT transfer quantity`; preparation creates a linked DRAFT only and performs no stock movement or accounting. Source location defaults to the preferred location but may be another active stock-holding location in the same authorized source branch. Product-level requests are split across eligible live lots and preserve `v_lot_unit_cost` snapshots. The fulfilment transaction locks the request line and takes a PostgreSQL transaction advisory lock per source-location/product before rechecking availability.
+
+## Phase 9C-B — reservation semantics
+
+`DRAFT` transfer lines are the reservation source of truth. `IN_TRANSIT` quantities are reported separately and are not reserved. Inventory contracts are On Hand (physical), Reserved (active draft quantity), Available (On Hand minus Reserved), and In Transit (dispatched but not received). No mutable reserved-stock column or accounting entry is introduced.

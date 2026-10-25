@@ -78,7 +78,11 @@ router.get("/stock-on-hand", requireAuth, async (req, res) => {
     l.lot_status,
 
     ${canViewCost ? "vuc.unit_cost" : "NULL::numeric AS unit_cost"},
-    soh.qty_on_hand
+    soh.qty_on_hand,
+    COALESCE(reserved.reserved_qty, 0) AS reserved_qty,
+    COALESCE(in_transit.in_transit_qty, 0) AS in_transit_qty,
+    soh.qty_on_hand - COALESCE(reserved.reserved_qty, 0) AS available_qty,
+    (soh.qty_on_hand < COALESCE(reserved.reserved_qty, 0)) AS reservation_integrity_defect
   FROM ${viewName} soh
   JOIN inv.product p
     ON p.product_id = soh.product_id
@@ -91,6 +95,20 @@ router.get("/stock-on-hand", requireAuth, async (req, res) => {
     ON l.lot_id = soh.lot_id
   LEFT JOIN inv.v_lot_unit_cost vuc
     ON vuc.lot_id = soh.lot_id
+  LEFT JOIN LATERAL (
+    SELECT COALESCE(SUM(tl.qty), 0) AS reserved_qty
+    FROM inv.stock_transfer t
+    JOIN inv.stock_transfer_line tl ON tl.stock_transfer_id = t.stock_transfer_id
+    WHERE t.source_location_id = soh.location_id AND t.status = 'DRAFT'
+      AND tl.product_id = soh.product_id AND tl.lot_id IS NOT DISTINCT FROM soh.lot_id
+  ) reserved ON true
+  LEFT JOIN LATERAL (
+    SELECT COALESCE(SUM(tl.qty - COALESCE(tl.received_qty, 0)), 0) AS in_transit_qty
+    FROM inv.stock_transfer t
+    JOIN inv.stock_transfer_line tl ON tl.stock_transfer_id = t.stock_transfer_id
+    WHERE t.source_location_id = soh.location_id AND t.status = 'IN_TRANSIT'
+      AND tl.product_id = soh.product_id AND tl.lot_id IS NOT DISTINCT FROM soh.lot_id
+  ) in_transit ON true
   ${whereClause}
   ORDER BY
     p.product_name,

@@ -1,5 +1,9 @@
 # Error and Root-Cause Log
 
+## Phase 9C-B — reservation hardening
+
+Fulfilment validation now uses available stock (`On Hand - active DRAFT reservations`) inside the transaction. POS, deliveries, adjustments, and production/cleaning still have module-specific stock checks using on-hand views; they require a separate reservation-awareness hardening pass before production if they can consume the same source stock.
+
 ## 2026-09-25 — Phase 8C cash refund/session and date display defects
 
 - Financial refund posting already worked, but no `CASH_REFUND` row was created in `app.till_cash_movement`.
@@ -690,3 +694,6 @@ Root cause: `useRowInteraction` received a new `keys` array on every render and 
 - Submitted requests previously kept the selected detail active and repopulated the entry workflow. Submission now resets the entry form without changing operating context and prevents repeated submission while the request is pending.
 - Stock Transfer Tasks previously displayed raw API JSON. The modal now hides UUIDs/technical fields and renders an operational request/task detail.
 - Admin approval scope was available from the backend but was not surfaced in the task modal. The task modal now queries the authoritative scope endpoint and displays approval/rejection controls when permitted.
+## Phase 9C-A — fulfilment progress disappearing after navigation
+
+Investigation of `ISR-20261025-000019` found the allocation persisted correctly in `kam_grains_db`: transfer `TRF-20261025-000013` remains `DRAFT`, linked to the request line, with quantity `0.500`. The defect was read-model/cache consistency: task fulfilment success refreshed only task-local React Query keys, while request history, transfer, and stock queries were left stale; the linked-transfer detail aggregate also counted cancelled transfers. The active allocation formula is now consistently `SUM(stock_transfer_line.qty)` for `DRAFT` and `IN_TRANSIT` transfers only. Fulfilment refresh invalidates task, request-history/detail, transfer, and stock query families so remounts reconstruct from authoritative API data.

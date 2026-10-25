@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCcw, Search, X } from "lucide-react";
 
-import { getProductCategories, getStockDetail, getStockOnHand } from "@/api/client";
+import { getProductCategories, getStockDetail, getStockOnHand, getStockReservations } from "@/api/client";
 import { getBranches, getLocationsForBranch } from "@/api/client";
 import { useOperatingContext } from "@/lib/operatingContext";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +41,10 @@ type StockRow = {
   category_name?: string | null;
   unit_cost?: string | null;
   qty_on_hand: string;
+  reserved_qty?: string | number;
+  available_qty?: string | number;
+  in_transit_qty?: string | number;
+  reservation_integrity_defect?: boolean;
   lot_status?: string; // 'ACTIVE' | 'CLOSED' | 'EXPIRED' | undefined
 };
 
@@ -86,6 +90,7 @@ export default function InventoryStock() {
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [selectedKey, setSelectedKey] = useState("");
   const [selectedRow, setSelectedRow] = useState<StockRow | null>(null);
+  const [reservationRow, setReservationRow] = useState<StockRow | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [showClosedLots, setShowClosedLots] = useState(false);
 
@@ -101,6 +106,7 @@ export default function InventoryStock() {
     queryFn: () => getStockOnHand({ include_closed: showClosedLots, branch_id: branchId, location_id: selectedLocationId || null, category_id: selectedCategoryId || null }),
   });
   const detailQuery = useQuery({ queryKey: ["stock-detail", selectedRow?.product_id, selectedRow?.location_id, selectedRow?.lot_id, selectedRow?.branch_id], queryFn: () => getStockDetail(selectedRow!.product_id, selectedRow!.location_id, selectedRow!.lot_id,selectedRow!.branch_id), enabled: Boolean(selectedRow) });
+  const reservationQuery = useQuery({ queryKey: ["stock-reservations", reservationRow?.product_id, reservationRow?.location_id, reservationRow?.lot_id], queryFn: () => getStockReservations(reservationRow!.product_id, reservationRow!.location_id, reservationRow!.lot_id), enabled: Boolean(reservationRow) });
 
   // ── Derived state ──
   const rows = useMemo(() => data?.data || [], [data]);
@@ -299,7 +305,10 @@ export default function InventoryStock() {
                   <TableHead>Location</TableHead>
                   <TableHead>Expiry</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead className="text-right">On Hand</TableHead>
+                  <TableHead className="text-right">Reserved</TableHead>
+                  <TableHead className="text-right">Available</TableHead>
+                  <TableHead className="text-right">In Transit</TableHead>
                   <TableHead className="text-right">Detail</TableHead>
                 </TableRow>
               </TableHeader>
@@ -307,7 +316,7 @@ export default function InventoryStock() {
               <TableBody>
                 {filteredRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-24 text-center">
+                    <TableCell colSpan={11} className="h-24 text-center">
                       {search ? (
                         <div>
                           <p className="text-slate-500">No stock found matching your search.</p>
@@ -350,6 +359,9 @@ export default function InventoryStock() {
                       <TableCell className="text-right font-semibold">
                         {formatQty(row.qty_on_hand)}
                       </TableCell>
+                      <TableCell className="text-right">{Number(row.reserved_qty || 0) > 0 ? <Button size="sm" variant="link" onClick={(event) => { event.stopPropagation(); setReservationRow(row); }}>{formatQty(row.reserved_qty)}</Button> : "0"}</TableCell>
+                      <TableCell className={`text-right ${row.reservation_integrity_defect ? "text-red-600 font-bold" : ""}`}>{formatQty(row.available_qty)}{row.reservation_integrity_defect ? " ⚠" : ""}</TableCell>
+                      <TableCell className="text-right">{formatQty(row.in_transit_qty)}</TableCell>
                       <TableCell className="text-right"><Button size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); setSelectedRow(row); }}>View</Button></TableCell>
                     </TableRow>
                   ))
@@ -365,6 +377,7 @@ export default function InventoryStock() {
           )}
         </CardContent>
       </Card>
+      {reservationRow && <div role="dialog" aria-modal="true" aria-label="Stock reservations" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setReservationRow(null)}><Card className="w-full max-w-6xl" onClick={(event) => event.stopPropagation()}><CardHeader><CardTitle>Stock Reservations — {reservationRow.lot_code || reservationRow.product_name}</CardTitle></CardHeader><CardContent><div className="mb-4 grid gap-2 text-sm sm:grid-cols-4"><p><b>On Hand:</b> {formatQty(reservationRow.qty_on_hand)}</p><p><b>Reserved:</b> {formatQty(reservationRow.reserved_qty)}</p><p><b>Available:</b> {formatQty(reservationRow.available_qty)}</p><p><b>In Transit:</b> {formatQty(reservationRow.in_transit_qty)}</p></div>{reservationQuery.isLoading ? <p>Loading reservations…</p> : <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm"><thead><tr className="border-b text-left"><th className="p-2">Transfer No</th><th className="p-2">Request No</th><th className="p-2">Source Location</th><th className="p-2">Destination Location</th><th className="p-2">Reserved Qty</th><th className="p-2">Lot</th><th className="p-2">Status</th><th className="p-2">Prepared By</th><th className="p-2">Prepared At</th></tr></thead><tbody>{(reservationQuery.data?.data || []).map((item: any) => <tr className="border-b" key={`${item.transfer_no}-${item.lot_code || "none"}`}><td className="p-2">{item.transfer_no}</td><td className="p-2">{item.request_no}</td><td className="p-2">{item.source_location_name}</td><td className="p-2">{item.destination_location_name}</td><td className="p-2">{formatQty(item.reserved_qty)} {item.uom_code}</td><td className="p-2">{item.lot_code || "—"}</td><td className="p-2">{item.status}</td><td className="p-2">{item.prepared_by}</td><td className="p-2">{new Date(item.prepared_at).toLocaleString()}</td></tr>)}</tbody></table>{!reservationQuery.data?.data?.length && <p className="py-6 text-center text-slate-500">No active reservations.</p>}</div>}<div className="mt-4 flex justify-end"><Button onClick={() => setReservationRow(null)}>Close</Button></div></CardContent></Card></div>}
       {selectedRow && <div role="dialog" aria-modal="true" aria-label="Stock detail" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setSelectedRow(null)}>
         <Card className="w-full max-w-xl" onClick={(event) => event.stopPropagation()}><CardHeader><CardTitle>Stock Detail</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2 text-sm">
           <p><b>Product:</b> {selectedRow.product_name}</p><p><b>SKU:</b> {selectedRow.sku}</p><p><b>Branch:</b> {selectedRow.branch_name}</p><p><b>Location:</b> {selectedRow.location_name} ({selectedRow.location_type})</p><p><b>Saleable:</b> {selectedRow.location_is_saleable ? "Yes" : "No"}</p><p><b>On hand:</b> {formatQty(selectedRow.qty_on_hand)} {selectedRow.uom_code}</p><p><b>Lot:</b> {selectedRow.lot_code || "—"}</p><p><b>Expiry:</b> {selectedRow.expiry_date ? new Date(selectedRow.expiry_date).toLocaleDateString() : "—"}</p><p><b>Unit cost:</b> {selectedRow.unit_cost == null ? "Restricted" : Number(selectedRow.unit_cost).toLocaleString()}</p>

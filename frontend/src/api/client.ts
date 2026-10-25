@@ -852,6 +852,10 @@ export async function getStockDetail(productId: string, locationId: string, lotI
   const response = await api.get("/inventory/stock-detail", { params: { product_id: productId, location_id: locationId, lot_id: lotId || undefined, branch_id: branchId || undefined } });
   return response.data;
 }
+export async function getStockReservations(productId: string, locationId: string, lotId?: string | null) {
+  const response = await api.get("/stock-reservations", { params: { product_id: productId, location_id: locationId, lot_id: lotId || undefined } });
+  return response.data;
+}
 
 export async function getInternalStockRequests(filters?: string | Record<string, string | null | undefined>) {
   const params = typeof filters === "string" ? (filters ? { branch_id: filters } : undefined) : filters;
@@ -885,6 +889,14 @@ export async function getInternalStockRequestApprovalScope(id: string) {
 export async function rejectInternalStockRequest(id: string, reason: string) {
   const response = await api.post(`/internal-stock-requests/${encode(id)}/reject`, { reason });
   return response.data;
+}
+export async function prepareStockRequestFulfilment(id: string, payload: ApiPayload) {
+  try {
+    const response = await api.post(`/internal-stock-requests/${encode(id)}/fulfil`, payload);
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error?.response?.data?.message || error?.message || "Fulfilment preparation failed.");
+  }
 }
 export async function getStockTransfer(id: string) {
   const response = await api.get(`/stock-transfers/${encode(id)}`);

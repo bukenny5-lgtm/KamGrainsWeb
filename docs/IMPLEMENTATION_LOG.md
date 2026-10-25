@@ -618,3 +618,22 @@ Corrected the shared row hook's unconditional selection reconciliation update an
 - Successful request submission now closes the active request detail, resets source/product/quantity/priority/type fields, preserves operating branch/location context, and gives explicit request-number feedback.
 - Replaced raw JSON task detail with a wide business-facing modal showing request routing, human names, status, priority, line quantities, current source availability, approval quantities, and contextual approval/rejection actions.
 - Added real source-side approval quantity entry and rejection reason handling in Stock Transfer Tasks. Approval refreshes task/history queries; approved outstanding work classifies as Ready for Fulfilment.
+## Phase 9C — source fulfilment and transfer preparation
+
+- Added additive migration `phase_58_stock_fulfilment_preparation.sql` with transfer-draft idempotency and request/status indexing.
+- Added source-scoped `FULFIL_STOCK_REQUEST` permission and `/internal-stock-requests/:id/fulfil`.
+- Added partial allocation, multiple linked transfer preparation, same-branch alternate source locations, lot splitting, live availability checks, request-line linkage, `TRANSFER_PREPARED` audit/business event, and retry protection.
+- Extended Stock Transfer Tasks with fulfilment quantities, source-location selection, live availability, and draft preparation.
+
+## Phase 9C-A — fulfilment progress persistence
+
+- Traced request history and task detail to the internal-stock-request list/detail endpoints and confirmed persisted transfer linkage in the local database.
+- Corrected linked-transfer allocated aggregation to exclude `CANCELLED` drafts.
+- Expanded successful preparation invalidation across task queues, request history/detail, inter-site transfers, and stock availability.
+
+## Phase 9C-B — stock reservation model
+
+- Added authoritative inventory reservation fields derived from active `DRAFT` transfer lines and separated `IN_TRANSIT` quantities.
+- Added branch-safe `/api/stock-reservations` drill-down and Inventory Stock reservation columns/modal.
+- Fulfilment validation now subtracts active source-location/product/lot reservations before allowing a new draft.
+- Added structured business conflict payloads for request-outstanding and available-stock conflicts.

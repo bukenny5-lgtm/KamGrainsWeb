@@ -1,4 +1,12 @@
 # Current Status
+
+## Phase 9C-B — reservation model
+
+Implemented locally: active draft reservations, available-to-allocate validation, inventory On Hand/Reserved/Available/In Transit fields, reservation drill-down, structured fulfilment conflicts, and lot-aware reservation checks. Phase 9D dispatch remains untouched; production is untouched and no commit/push/deployment was made.
+
+# Phase 9C-A status — fulfilment progress persistence
+
+Investigated and fixed the navigation/remount consistency defect. The local database record for `ISR-20261025-000019` and transfer `TRF-20261025-000013` was present and correct at `0.500` allocated. The fix aligns active-transfer aggregation across read models and invalidates all affected React Query families after preparation. No Phase 9D work, production access, commit, push, or deployment was performed.
 ## Checkpoint follow-up — return/refund journal account mapping
 
 PENDING VERIFICATION: Return journal RET-20261008-001049 visually shows account 4000 — Sales Revenue for the memo Refund due RET-20261008-000034, while the subsequent refund settlement journal uses 2100 — Customer Refunds Payable. This requires post-checkpoint tracing to determine whether the journal UI/account mapping is incorrect or whether return posting used the wrong GL account. No accounting change is made in this checkpoint.
@@ -381,3 +389,6 @@ Phase 9B-C acceptance corrections are implemented. Approval is source-branch sco
 # Phase 9B-D status — 2026-10-25
 
 Phase 9B-D request/task UX corrections are implemented. Submission resets the request-entry workflow while preserving operating context; Stock Transfer Tasks now use business-facing detail instead of raw JSON; Admin/Head Office and source-authorized approval actions are visible from the authoritative scope contract; approval quantity entry and rejection reason handling are available; and task/history refresh follows approval decisions. Phase 9C fulfilment remains deferred.
+# Phase 9C status — source fulfilment preparation
+
+Implemented locally: source-side partial allocation against approved requests, multiple linked draft transfers, same-branch source-location selection, lot-level preparation, live transactional revalidation, advisory-lock concurrency protection, idempotency, and task-modal controls. Migration 58 was applied and verified on local `kam_grains_db`; no dispatch, receiving, stock decrement, transit journal, or accounting was added. Authenticated fulfilment scenarios remain pending; production is untouched and no commit/push/deployment was made.

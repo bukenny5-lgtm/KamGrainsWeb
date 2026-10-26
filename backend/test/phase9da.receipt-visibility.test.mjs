@@ -19,11 +19,12 @@ test("receipt tasks use persisted destination scope and business references", ()
   assert.match(route, /dispatches\/:id/);
 });
 
-test("receipt UI keeps NEW RECEIPT read-only and avoids UUID references", () => {
+test("receipt UI exposes event-based posting and avoids UUID references", () => {
   assert.match(page, /NEW RECEIPT/);
   assert.match(page, /Legacy \/ No Stock Request/);
   assert.match(page, /getStockTransferDispatch/);
-  assert.match(page, /No receipt is posted from this view/);
+  assert.match(page, /receiveStockTransferDispatch/);
+  assert.match(page, /Receipt History/);
   assert.doesNotMatch(page, /window\.alert\(`Dispatch/);
   assert.match(page, /stock-transfer-dispatch/);
   assert.match(page, /incoming-receipts/);

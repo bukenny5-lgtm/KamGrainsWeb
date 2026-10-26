@@ -709,3 +709,23 @@ Investigation of `ISR-20261025-000019` found the allocation persisted correctly 
 ## Phase 9D-B resolved issue
 
 - Internal Stock Requests history appeared empty because the endpoint returned a SQL error after Phase 9D added a correlated dispatch sum inside an aggregate lateral query. The frontend treated the failed response as an ordinary empty list. The dispatch sum is now aggregated by request and the page exposes a distinct history-load error state.
+
+## Phase 9E-A resolved issue — stale backend process returned HTML 404
+
+- The route was correctly registered and mounted at `POST /api/stock-transfers/dispatches/:id/receive`.
+- The HTML 404 came from stale Node PID 20920 owning port 3000 before the current workspace backend was started. It was not a route-order, auth, permission, frontend-base-URL, or parameter-type defect.
+- After replacing the stale listener, live receipt posting returned JSON 201, duplicate retry JSON 200, and over-receipt JSON 409.
+
+## Phase 9E-B resolved issue — receipt-line join inflated active quantities
+
+- Multiple receipt lines joined directly to dispatch lines caused `SUM(dl.qty)` to multiply an execution's dispatched quantity. `TEX-20261026-000004` therefore appeared as 0.600 dispatched, 0.300 received, and still active after receiving its full 0.300 KG.
+- The active receipt query now pre-aggregates receipt lines by dispatch line before joining, restoring canonical execution totals and removing fully received executions from the active queue.
+
+## Phase 9E-C resolved issue — receiving action was not operationally exposed
+
+- Incoming task detail was effectively read-only from the user’s perspective: the page exposed only View/selection state and did not render an authoritative Receive Stock capability result.
+- Added destination-authoritative capability evaluation and a visible Receive Stock action. Location mismatches now explain the exact destination location instead of silently hiding the action.
+
+## Phase 9E-D2 resolved issue — preferred location incorrectly constrained receipt UX
+
+- The receiving UI had no recipient location selector and capability was tied to the old intended location. Valid authorized locations are now listed from the destination branch, and the selected location is posted as `receiving_location_id`.

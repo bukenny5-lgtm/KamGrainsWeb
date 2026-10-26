@@ -442,3 +442,17 @@ Source fulfilment reuses `inv.stock_transfer` and `inv.stock_transfer_line`. The
 
 - Request History means all requests authorized through requesting-branch OR source-branch involvement, with Admin/Head Office management scope; it is not an active-task queue.
 - Lifecycle progression, dispatch, receipt-task creation, completion, rejection, and cancellation do not remove an authorized request from history.
+
+# Phase 9E-B decisions
+
+- Receipt History is event-based and permanent: every successful receipt event remains separately traceable by TRR, even after its execution leaves the active queue.
+- The Incoming Receipts queue is execution-based and only shows outstanding receipt quantities; fully received executions remain available through Receipt History.
+- Destination receipt actions live under Stock Transfer Tasks → Incoming Receipts. The detail workflow distinguishes execution receipt outstanding from parent request remaining-to-serve quantities.
+- Receipt input defaults to the current execution outstanding quantity but may be reduced for partial receiving. Each later receipt creates a new TRR and movement.
+
+# Phase 9E-C decisions
+
+- Receive action availability is backend-authoritative and destination-specific. A branch grant alone does not grant receipt access to every destination location.
+- Destination managers may view a branch-authorized execution, but the UI must explain when the persisted destination location is outside the user’s receiving grants.
+- The new UI action reuses `POST /api/stock-transfers/dispatches/:id/receive`; no legacy receipt posting path is used.
+- Phase 9E-D2 fixes the permanent receiving-location rule: destination branch is fixed before dispatch, preferred receiving location is optional guidance, and the authorized recipient selects the actual active stock-holding location at receipt time.

@@ -605,7 +605,34 @@ export async function getIncomingReceiptTasks(params: ApiPayload = {}) {
 }
 
 export async function getStockTransferDispatch(id: string) {
-  const response = await api.get(`/stock-transfers/dispatches/${encode(id)}`);
+  const [response, capability] = await Promise.all([
+    api.get(`/stock-transfers/dispatches/${encode(id)}`),
+    api.get(`/stock-transfers/dispatches/${encode(id)}/receive-capability`),
+  ]);
+  return { ...response.data, data: { ...response.data.data, ...capability.data.data, lines: response.data.data?.lines || capability.data.data?.lines || [] } };
+}
+export async function getStockTransferDispatchCapability(id: string) {
+  const response = await api.get(`/stock-transfers/dispatches/${encode(id)}/receive-capability`);
+  return response.data;
+}
+
+export async function receiveStockTransferDispatch(id: string, payload: ApiPayload = {}) {
+  const response = await api.post(`/stock-transfers/dispatches/${encode(id)}/receive`, payload);
+  return response.data;
+}
+
+export async function getTransferReceiptHistory(params: ApiPayload = {}) {
+  const response = await api.get("/stock-transfers/receipt-history", { params });
+  return response.data;
+}
+
+export async function getStockTransferReceipt(id: string) {
+  const response = await api.get(`/stock-transfers/receipts/${encode(id)}`);
+  return response.data;
+}
+
+export async function getStockTransferReceivingLocations(id: string) {
+  const response = await api.get(`/stock-transfers/dispatches/${encode(id)}/receiving-locations`);
   return response.data;
 }
 
@@ -751,7 +778,6 @@ export async function testPaymentAccountCanPay(
     );
     return response.data;
   }
-
   const response = await api.post(
     "/payment-accounts/test-can-pay",
     accountIdOrPayload

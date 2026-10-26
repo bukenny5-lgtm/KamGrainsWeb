@@ -181,7 +181,7 @@ router.get("/stock-movements", async (req, res) => {
         ON to_loc.location_id = sml.to_location_id
       LEFT JOIN sec.app_user u
         ON u.user_id = sm.created_by
-      WHERE COALESCE(from_loc.branch_id,to_loc.branch_id)=$1
+      WHERE (from_loc.branch_id=$1 OR to_loc.branch_id=$1)
         AND ($2::boolean OR EXISTS(SELECT 1 FROM sec.user_location ul WHERE ul.user_id=$3 AND ul.location_id IN(sml.from_location_id,sml.to_location_id) AND ul.is_active))
       ORDER BY sm.movement_ts DESC, sm.created_at DESC;
     `,[req.branchId,getUserRoles(req).some((role)=>["ADMIN","MANAGER","AUDITOR","HEAD_OFFICE"].includes(role)),req.user?.user_id]);

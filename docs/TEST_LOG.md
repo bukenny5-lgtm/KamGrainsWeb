@@ -1191,3 +1191,33 @@ Live scope acceptance used local `kam_grains_db` and request `ISR-20261025-00001
 - Focused Phase 9C/9D/9D-A/9D-B tests passed: 11/11.
 - Backend build, frontend TypeScript/Vite build, and `git diff --check` passed.
 - No request data was modified; no receipt, accounting, commit, push, or deployment was performed.
+
+## Phase 9E-A validation — 2026-10-26
+
+| Check | Result | Evidence |
+|---|---|---|
+| Port/process diagnosis | PASS | PID 20920 was the stale Node listener on port 3000; current backend started after replacement. |
+| New receipt POST | PASS | JSON 201; `TRR-20261026-000001`; dispatch `TEX-20261026-000002`; 0.100 KG. |
+| Idempotent retry | PASS | JSON 200 duplicate response; no second TRR or movement. |
+| Over-receipt response | PASS | JSON 409 with business message. |
+| Movement/inventory | PASS | TRANSFER movement `9b5a4a6e-db6f-4489-9eca-72b6412444e1`, transit to destination, lot and cost preserved. |
+| Focused tests/builds | PASS | Phase 9E tests, backend build, frontend TypeScript/build, and diff check passed. |
+
+## Phase 9E-B validation — 2026-10-26
+
+| Check | Result | Evidence |
+|---|---|---|
+| Existing history event | PASS | `TRR-20261026-000001` returned by receipt-history API. |
+| Partial receipt event 1 | PASS | `TRR-20261026-000002`, 0.100 KG against `TEX-20261026-000004`. |
+| Partial receipt event 2 | PASS | `TRR-20261026-000003`, 0.200 KG; independent TRR and movement. |
+| Event history count | PASS | Receipt-history API returned all 3 TRRs. |
+| Active queue lifecycle | PASS | Fully received `TEX-20261026-000004` left active work; `TEX-20261026-000005` and `TEX-20261026-000006` remained active. |
+| Aggregation correction | PASS | Receipt-line pre-aggregation removed dispatched-quantity inflation. |
+
+## Phase 9E-D2 — recipient-selected receiving location
+
+| Check | Result | Evidence |
+|---|---|---|
+| Authorized destination-branch receiving locations | PASS | Endpoint restricts options to active stock-holding locations with active user grants. |
+| Alternate authorized location capability | PASS-CODE | Capability counts valid authorized receiving locations rather than requiring the preferred location. |
+| UI selector and payload | PASS-CODE | Receive Into Location selector submits `receiving_location_id` to the canonical receive endpoint. |

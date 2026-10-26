@@ -1,10 +1,12 @@
-# Internal stock transfer dispatch — Phase 9D
+# Internal stock transfer dispatch and receiving — Phase 9E
 
 The internal transfer lifecycle is:
 
 `Request → Approval → Preparation/Reservation → Dispatch → In Transit → Receipt → Completion`
 
-Phase 9D implements source dispatch only. Dispatch creates an immutable `TEX-YYYYMMDD-######` execution header and lines, posts one GL-neutral `TRANSFER` movement from the authorized source location to that source branch's system TRANSIT location, and creates destination-scoped Incoming Receipt work. Destination receipt remains a separate Phase 9D-deferred action.
+Phase 9D implements source dispatch. Dispatch creates an immutable `TEX-YYYYMMDD-######` execution header and lines, posts one GL-neutral `TRANSFER` movement from the authorized source location to that source branch's system TRANSIT location, and creates destination-scoped Incoming Receipt work.
+
+Phase 9E adds event-based destination receiving. Each receipt creates a durable `TRR-YYYYMMDD-######` header and line set, posts a GL-neutral `TRANSFER` movement from transit to the persisted destination, updates cumulative transfer/request progress, and remains visible in receipt history. Full, partial, and multiple receipts are supported; active work excludes fully received executions. Receipt posting is destination-authorized, idempotent by dispatch and retry key, serialized on the dispatch, and rejects over-receipt or unavailable transit stock. Variance resolution remains deferred to Phase 9F.
 
 `DRAFT` transfer lines reserve on-hand stock. Partial dispatch changes the transfer to `PARTIALLY_DISPATCHED`; the un-dispatched remainder stays Reserved, while dispatched quantity is In Transit. Full dispatch changes the transfer to `IN_TRANSIT`. Inventory derives On Hand, Reserved, Available, and In Transit from movement and transfer execution state; no competing mutable quantity is maintained.
 

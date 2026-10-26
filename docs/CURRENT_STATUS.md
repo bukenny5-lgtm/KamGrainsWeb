@@ -403,3 +403,21 @@ Investigated `TEX-20261026-000006`: it is a persisted `DISPATCHED` execution for
 # Phase 9D-B status — internal stock request history restored
 
 The history regression was caused by the Phase 9D dispatch-total scalar subquery referencing `t.stock_transfer_id` inside an aggregate lateral query without grouping it, causing the history endpoint to return an error while the UI showed its normal empty state. The query now aggregates dispatch totals by request safely. Requesting-side OR source-side authorization, Admin/Head Office scope, permanent lifecycle history, progress quantities, and separate active queues are preserved. Local DB acceptance confirmed Bukenya sees 16 authorized requests and KAM Admin sees 19, including the three known ISR references.
+
+# Phase 9E status — destination receiving
+
+Phase 9E adds receipt-event history through migration 60. Destination users can post full, partial, and repeated receipts against a dispatched execution using TRR-numbered receipt headers and lines; each receipt posts a GL-neutral TRANSFER movement from transit to the persisted destination while preserving lot and unit cost. Active receipt work excludes fully received executions, while receipt history remains permanent. Destination authorization, idempotency, over-receipt validation, concurrency locking, `TRANSFER_RECEIVED` audit/business events, SALES receipt permission, and source service-status filtering are implemented locally. Phase 9F variance resolution, Manager split, supplier/GRN/AP/VAT/COGS, commit, push, deployment, and production changes remain deferred.
+
+## Phase 9E-B status — destination receiving UI
+
+Receipt History now refetches independently of the active Incoming Receipts status default, so completed event `TRR-20261026-000001` remains visible. The receiving workflow exposes the selected dispatch action, a wide execution-level detail/receipt modal, previously received and outstanding-to-receive quantities, and defaults Receive Now to the current execution remainder while allowing partial quantities. Receipt event history remains permanent and active queues continue to exclude fully received executions. No Phase 9F work, commit, push, deployment, or production changes were made.
+
+Phase 9E-B live acceptance also posted `TRR-20261026-000002` for 0.100 KG and `TRR-20261026-000003` for 0.200 KG against `TEX-20261026-000004`; all three receipt events remain visible in history. The active queue aggregation now pre-aggregates receipt lines so multiple receipt events cannot inflate execution dispatched quantities; the fully received execution leaves active work while `TEX-20261026-000005` and `TEX-20261026-000006` remain actionable.
+
+## Phase 9E-C status — receive action availability
+
+Dispatch detail now combines business detail with an authoritative destination receipt capability response. `can_receive` requires receiving permission, destination branch access, explicit destination-location access, outstanding execution quantity, and a dispatched execution. The UI shows Receive Stock for authorized destinations and a clear blocked-location reason otherwise. Bukenya has Shop access but not Store access: `TEX-20261026-000006` correctly reports `can_receive=false` with the Store-specific reason, while Shop-destined outstanding executions remain receivable.
+
+## Phase 9E-D2 status — recipient location selection
+
+Destination branch remains fixed before dispatch. Preferred receiving location is guidance only. The authorized recipient now receives a destination-branch-scoped list of active stock-holding locations, selects Receive Into Location, and posts the selection as `receiving_location_id`; TRR and movement dimensions use that actual location.

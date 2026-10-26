@@ -651,9 +651,33 @@ Corrected the shared row hook's unconditional selection reconciliation update an
 - Corrected Incoming Receipt eligibility to use persisted execution destination fields and destination user-location authorization rather than incorrectly requiring the active branch header to equal the destination.
 - Added `request_no` joins, legacy fallback labels, source/destination/date filters, dispatch detail retrieval, and consistent React Query invalidation.
 - Added read-only Incoming Receipt detail presentation and replaced dispatch success native alert with an in-page application notification. Destination receipt posting remains deferred.
+
+## Phase 9E-A — receipt route runtime correction
+
+- Confirmed final route composition: `POST /api/stock-transfers/dispatches/:id/receive`.
+- Identified and replaced stale port-3000 Node PID 20920; the current workspace backend then served the route.
+- Live acceptance generated `TRR-20261026-000001`, posted one transit-to-destination TRANSFER movement, returned JSON for success/duplicate/409 business-error cases, and preserved the legacy route.
+
+## Phase 9E-B — destination receiving UI and multi-event history
+
+- Fixed the UI history query so the active queue's `NEW RECEIPT` default cannot hide completed receipt events.
+- Added execution-level Receive Now defaults from outstanding quantity and preserved partial/multiple receipt event semantics.
+- Corrected active queue aggregation by pre-aggregating receipt lines before joining dispatch quantities; completed executions now leave active work while all TRRs remain in history.
+- Live acceptance created `TRR-20261026-000002` (0.100 KG) and `TRR-20261026-000003` (0.200 KG) for `TEX-20261026-000004`; history returned three events and the execution closed from active receipt work.
+
+## Phase 9E-C — receive action availability
+
+- Added destination receipt capability evaluation and merged it into dispatch detail loading without duplicating receipt posting logic.
+- Receive Stock is shown only when the canonical capability is true and execution receipt outstanding is positive; blocked destination locations show a business-facing reason.
+- Bukenya’s live check confirmed Test Branch B Shop is authorized and Test Branch B Store is not; `TEX-20261026-000006` therefore returns `can_receive=false` with the Store-specific explanation.
 ## Phase 9D-B — internal stock request history
 
 - Verified `ISR-20261025-000019`, `ISR-20261025-000020`, and `ISR-20260922-000004` remain persisted in `kam_grains_db`.
 - Fixed the Phase 9D dispatch aggregation query so historical request listing no longer fails on an ungrouped correlated transfer column.
 - Preserved canonical requesting-branch OR preferred-source-branch scope, Admin/Head Office broader scope, all lifecycle statuses, filters, progress quantities, and detail authorization.
 - Added regression coverage and a business-friendly history load error state.
+
+## Phase 9E-D2 — recipient-selected receiving location
+
+- Added an authoritative `receiving-locations` endpoint scoped to the persisted destination branch and the authenticated user’s active location grants.
+- Added alternate-location capability evaluation, the Receive Into Location selector, and `receiving_location_id` payload submission.

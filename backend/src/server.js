@@ -61,8 +61,53 @@ dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
+const HOST = process.env.HOST || "0.0.0.0";
 
-app.use(cors());
+const configuredCorsOrigins = new Set(
+  String(process.env.CORS_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+);
+
+function isAllowedLocalOrigin(origin) {
+  if (!origin) return true;
+
+  let url;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false;
+  }
+
+  if (url.protocol !== "http:" || (url.port && url.port !== "5173")) {
+    return false;
+  }
+
+  const hostname = url.hostname.toLowerCase();
+  if (hostname === "localhost" || hostname === "127.0.0.1") return true;
+
+  const octets = hostname.split(".").map(Number);
+  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) {
+    return false;
+  }
+
+  return (
+    octets[0] === 10 ||
+    (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+    (octets[0] === 192 && octets[1] === 168)
+  );
+}
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || configuredCorsOrigins.has(origin) || isAllowedLocalOrigin(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error("CORS origin is not allowed."));
+  },
+  credentials: false,
+}));
 app.use(express.json());
 
 app.get("/", (req, res) => {
@@ -156,6 +201,6 @@ app.use("/api/dashboard", dashboardRoutes);
 // ===============================
 app.use("/api/reconciliations", reconciliationRoutes);
 
-app.listen(PORT, () => {
-  console.log(`KAM GRAINS API running at http://localhost:${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`KAM GRAINS API running on ${HOST}:${PORT} (PC: http://localhost:${PORT})`);
 });

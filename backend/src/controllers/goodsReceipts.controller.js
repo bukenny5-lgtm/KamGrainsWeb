@@ -1,4 +1,5 @@
 import { pool } from "../db.js";
+import { lockStockItems } from "../services/stockLock.service.js";
 
 export async function postGoodsReceiptController(req, res) {
   const client = await pool.connect();
@@ -44,6 +45,17 @@ export async function postGoodsReceiptController(req, res) {
         message: `Goods receipt ${grnNo} is already posted.`,
       });
     }
+
+    const lines = await client.query(
+      `SELECT gr.location_id, grl.product_id
+       FROM pur.goods_receipt gr
+       JOIN pur.goods_receipt_line grl ON grl.grn_id=gr.grn_id
+       WHERE gr.grn_no=$1
+       ORDER BY grl.product_id`,
+      [grnNo]
+    );
+    if (!lines.rowCount) throw new Error("Goods receipt has no stock lines.");
+    await lockStockItems(client, lines.rows);
 
     await client.query(
       `

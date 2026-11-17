@@ -60,8 +60,28 @@ import type {
  * This version matches your current backend server.js route mounts.
  */
 
+const DEFAULT_API_BASE_URL = "http://localhost:3000/api";
+const configuredApiBaseUrl = String(import.meta.env.VITE_API_BASE_URL || "").trim();
+
+function resolveApiBaseUrl() {
+  if (typeof window === "undefined") {
+    return configuredApiBaseUrl || DEFAULT_API_BASE_URL;
+  }
+
+  // Keep an explicitly configured non-localhost endpoint authoritative. The
+  // localhost default adapts when the same dev server is opened from a phone.
+  if (configuredApiBaseUrl && configuredApiBaseUrl !== DEFAULT_API_BASE_URL) {
+    return configuredApiBaseUrl;
+  }
+
+  const browserHost = window.location.hostname || "localhost";
+  return browserHost === "localhost" || browserHost === "127.0.0.1"
+    ? DEFAULT_API_BASE_URL
+    : `${window.location.protocol}//${browserHost}:3000/api`;
+}
+
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api",
+  baseURL: resolveApiBaseUrl(),
   timeout: 15000,
 });
 

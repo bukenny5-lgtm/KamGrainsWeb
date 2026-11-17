@@ -1,5 +1,10 @@
 # Implementation Log
 
+## 2026-11-17 — Phase 62/63 production rollout documentation
+
+- Recorded the completed production deployment of POS stock-concurrency protection, normal-delivery reservation safety, POS privilege closure, normal-sales ACL hardening, backup evidence, role model, networking, and NSSM service paths in [PHASE_62_63_PRODUCTION_DEPLOYMENT.md](PHASE_62_63_PRODUCTION_DEPLOYMENT.md).
+- No application logic, migration, database permission, configuration, stock, sales, accounting, or security behavior was changed by this documentation update.
+
 ## 2026-09-25 — Phase 8C cash refund/session and date display correction
 
 - Added forward migration 43 with auditable nullable session/till/branch/location fields on `sal.refund_settlement`.
@@ -681,3 +686,38 @@ Corrected the shared row hook's unconditional selection reconciliation update an
 
 - Added an authoritative `receiving-locations` endpoint scoped to the persisted destination branch and the authenticated user’s active location grants.
 - Added alternate-location capability evaluation, the Receive Into Location selector, and `receiving_location_id` payload submission.
+
+## Narrow inventory allocation integrity fix — 2026-11-12
+
+- Internal Stock Request fulfilment now allocates from the reservation-aware `available_qty` returned by the locked source-stock query, never raw `qty_on_hand`.
+- Preserved the existing single-client transaction, deterministic stock locks, request-line locks, idempotent linked-transfer preparation, and commit/rollback behavior.
+- Added a real-handler focused test covering unreserved stock, reserved stock, fully reserved lots, multi-lot allocation, insufficiency, lock failure, and client ordering.
+- No POS Phase B, customer-return, delivery-posting, schema, migration, database, deployment, or service changes were made for this fix.
+- Normal delivery audit remains read-only: UI/lot-option checks sum raw on-hand, while final posting delegates to `sal.post_delivery_by_no`; the authoritative SQL definition is not present in this repository, so no delivery change was made.
+
+## Normal delivery reservation safety — 2026-11-12
+
+- Added `database/migrations/phase_63_normal_delivery_reservation_safety.sql` for staging validation.
+- Reused the authoritative reservation rule: `DRAFT` reserves the full line; `PARTIALLY_DISPATCHED` reserves its undispatched remainder; non-active/received states do not reserve source stock.
+- Updated the delivery lot-options view, route checks, and `sal.post_delivery(uuid)` with reservation-aware availability, NULL-lot-safe matching, and deterministic `stock-fulfil:<location_id>:<product_id>` locks.
+- Preserved SALE_ISSUE movement, selected-lot posting, COGS/Inventory journals, posted fields, cancellation/already-posted guards, and the by-number wrapper.
+- Staging implementation and controlled rollback/direct-SQL/concurrency checks passed. `kam_grains_db` was not accessed or modified; production remains pending.
+
+## Phase 62 staging reconciliation — 2026-11-12
+
+- Reconciled the previously missing `phase_62_pos_location_stock_enforcement.sql` migration in `kam_grains_staging` using `kam_grains_staging_app` as the application role.
+- Verified guarded/unscoped function ownership and ACL separation.
+- Added only the staging privileges required by the legacy POS path and its audit/branch triggers; production was not accessed.
+- Real application-role POS posting and direct legacy bypass checks passed. Full delivery-vs-business-operation race evidence remains pending.
+
+## Phase 62 POS reservation matrix — 2026-11-12
+
+- Completed application-role staging coverage for partial reservation, exact available quantity, fully reserved stock, raw-on-hand-versus-available rejection, reservation on another lot, and reservation at another location.
+- Rejected cases were compared against pre-call movement, movement-line, journal, journal-line, AR, and POS-state counts before rollback/cleanup.
+- No Phase 62/63 source or migration changes were made.
+
+## Phase 62/63 real delivery races — 2026-11-12
+
+- Ran committed two-session delivery-vs-delivery and delivery-vs-POS races using cloned valid delivery fixtures and actual posting functions.
+- PostgreSQL observed the losing session waiting on the shared advisory lock; after the winner committed, the loser revalidated availability and failed without posting artifacts.
+- Delivery-vs-transfer dispatch race remains outstanding because the application dispatch route requires authenticated service context not available through the approved direct staging database connections.

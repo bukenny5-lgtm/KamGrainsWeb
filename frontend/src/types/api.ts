@@ -45,7 +45,9 @@ export type PosLotOption = {
   lot_id: string;
   lot_code: string;
   expiry_date?: string | null;
+  lot_status?: string | null;
   qty_on_hand: string | number;
+  available_qty?: string | number;
 };
 
 export type PosProduct = {

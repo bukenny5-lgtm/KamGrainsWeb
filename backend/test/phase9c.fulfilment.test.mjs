@@ -11,7 +11,7 @@ const reservationsRoute = fs.readFileSync(new URL("../src/routes/stockReservatio
 test("Phase 9C preparation is transactional, linked, partial, and idempotent", () => {
   assert.match(route, /router\.post\("\/:id\/fulfil"/);
   assert.match(route, /REQUEST_OUTSTANDING_EXCEEDED/);
-  assert.match(route, /pg_advisory_xact_lock/);
+  assert.match(route, /lockStockItems\(c,/);
   assert.match(route, /TRANSFER_PREPARED/);
   assert.match(route, /request_line_id/);
   assert.match(route, /lot_id/);

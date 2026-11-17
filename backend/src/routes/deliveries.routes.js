@@ -5,6 +5,7 @@ import { requirePermission } from "../middleware/permissions.js";
 import { getUserRoles } from "../middleware/permissions.js";
 import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
 import { assertCustomerVisible } from "../services/customerScope.service.js";
+import { lockStockItems } from "../services/stockLock.service.js";
 
 const router = express.Router();
 router.use(requireAuth, requireLocationAccessWhenSpecified);
@@ -100,7 +101,7 @@ router.get("/", async (req, res) => {
  * Returns available lots for one delivery line.
  * Includes required qty and enough-stock flags so the frontend can show a clear warning.
  */
-router.get("/lot-options/:deliveryLineId", async (req, res) => {
+export async function getDeliveryLotOptionsHandler(req, res) {
   try {
     const { deliveryLineId } = req.params;
 
@@ -148,12 +149,14 @@ router.get("/lot-options/:deliveryLineId", async (req, res) => {
         lot_id_key,
         expiry_date,
         qty_on_hand,
+        reserved_qty,
+        available_qty,
         $2::numeric AS required_qty,
-        (COALESCE(qty_on_hand, 0) >= $2::numeric) AS enough_stock
+        (COALESCE(available_qty, 0) >= $2::numeric) AS enough_stock
       FROM sal.v_delivery_line_lot_options
       WHERE delivery_line_id_text = $1
       ORDER BY
-        CASE WHEN COALESCE(qty_on_hand, 0) >= $2::numeric THEN 0 ELSE 1 END,
+        CASE WHEN COALESCE(available_qty, 0) >= $2::numeric THEN 0 ELSE 1 END,
         expiry_date,
         lot_code;
       `,
@@ -162,10 +165,30 @@ router.get("/lot-options/:deliveryLineId", async (req, res) => {
 
     const availableResult = await query(
       `
-      SELECT COALESCE(SUM(qty_on_hand), 0) AS available_qty
-      FROM inv.v_stock_on_hand
-      WHERE product_id = $1
-        AND location_id = $2;
+      SELECT COALESCE(SUM(soh.qty_on_hand - COALESCE(reserved.reserved_qty, 0)), 0) AS available_qty
+      FROM inv.v_stock_on_hand soh
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(CASE
+          WHEN t.status = 'DRAFT' THEN tl.qty
+          WHEN t.status = 'PARTIALLY_DISPATCHED' THEN tl.qty - COALESCE(dispatched.dispatched_qty, 0)
+          ELSE 0
+        END), 0) AS reserved_qty
+        FROM inv.stock_transfer t
+        JOIN inv.stock_transfer_line tl ON tl.stock_transfer_id = t.stock_transfer_id
+        LEFT JOIN LATERAL (
+          SELECT SUM(dl2.qty) AS dispatched_qty
+          FROM inv.stock_transfer_dispatch_line dl2
+          JOIN inv.stock_transfer_dispatch d2 ON d2.dispatch_id = dl2.dispatch_id
+          WHERE dl2.stock_transfer_line_id = tl.stock_transfer_line_id
+            AND d2.status = 'DISPATCHED'
+        ) dispatched ON true
+        WHERE t.source_location_id = soh.location_id
+          AND t.status IN ('DRAFT', 'PARTIALLY_DISPATCHED')
+          AND tl.product_id = soh.product_id
+          AND tl.lot_id IS NOT DISTINCT FROM soh.lot_id
+      ) reserved ON true
+      WHERE soh.product_id = $1
+        AND soh.location_id = $2;
       `,
       [line.product_id, line.location_id]
     );
@@ -195,7 +218,9 @@ router.get("/lot-options/:deliveryLineId", async (req, res) => {
       detail: error.detail || null
     });
   }
-});
+}
+
+router.get("/lot-options/:deliveryLineId", getDeliveryLotOptionsHandler);
 
 /**
  * GET /api/deliveries/:deliveryId
@@ -712,11 +737,7 @@ router.patch(
  * PATCH /api/deliveries/lines/:deliveryLineId/lot
  * Assigns lot to delivery line after confirming enough stock exists in the delivery location.
  */
-router.patch(
-  "/lines/:deliveryLineId/lot",
-  requireAuth,
-  requirePermission("CREATE_DELIVERY"),
-  async (req, res) => {
+export async function assignDeliveryLineLotHandler(req, res) {
     try {
       const { deliveryLineId } = req.params;
       const { lot_id } = req.body || {};
@@ -738,7 +759,7 @@ router.patch(
           d.delivery_no,
           d.is_posted,
           p.product_name,
-          COALESCE(SUM(soh.qty_on_hand), 0) AS available_qty
+          COALESCE(SUM(soh.qty_on_hand - COALESCE(reserved.reserved_qty, 0)), 0) AS available_qty
         FROM sal.delivery_line dl
         JOIN sal.delivery d
           ON d.delivery_id = dl.delivery_id
@@ -748,6 +769,26 @@ router.patch(
           ON soh.product_id = dl.product_id
          AND soh.lot_id = $2
          AND soh.location_id = d.location_id
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(SUM(CASE
+            WHEN t.status = 'DRAFT' THEN tl.qty
+            WHEN t.status = 'PARTIALLY_DISPATCHED' THEN tl.qty - COALESCE(dispatched.dispatched_qty, 0)
+            ELSE 0
+          END), 0) AS reserved_qty
+          FROM inv.stock_transfer t
+          JOIN inv.stock_transfer_line tl ON tl.stock_transfer_id = t.stock_transfer_id
+          LEFT JOIN LATERAL (
+            SELECT SUM(dl2.qty) AS dispatched_qty
+            FROM inv.stock_transfer_dispatch_line dl2
+            JOIN inv.stock_transfer_dispatch d2 ON d2.dispatch_id = dl2.dispatch_id
+            WHERE dl2.stock_transfer_line_id = tl.stock_transfer_line_id
+              AND d2.status = 'DISPATCHED'
+          ) dispatched ON true
+          WHERE t.source_location_id = soh.location_id
+            AND t.status IN ('DRAFT', 'PARTIALLY_DISPATCHED')
+            AND tl.product_id = soh.product_id
+            AND tl.lot_id IS NOT DISTINCT FROM soh.lot_id
+        ) reserved ON true
         WHERE dl.delivery_line_id = $1
         GROUP BY
           dl.delivery_line_id,
@@ -820,7 +861,13 @@ router.patch(
         detail: error.detail || null
       });
     }
-  }
+}
+
+router.patch(
+  "/lines/:deliveryLineId/lot",
+  requireAuth,
+  requirePermission("CREATE_DELIVERY"),
+  assignDeliveryLineLotHandler
 );
 
 /**
@@ -832,13 +879,25 @@ router.post(
   requireAuth,
   requirePermission("POST_DELIVERY"),
   async (req, res) => {
+    const client = await pool.connect();
     try {
       const { deliveryNo } = req.params;
-
-      const result = await query(
+      await client.query("BEGIN");
+      const lines = await client.query(
+        `SELECT d.location_id, dl.product_id
+         FROM sal.delivery d
+         JOIN sal.delivery_line dl ON dl.delivery_id=d.delivery_id
+         WHERE d.delivery_no=$1
+         ORDER BY dl.product_id`,
+        [deliveryNo]
+      );
+      if (!lines.rowCount) throw Object.assign(new Error("Delivery not found or has no lines."), { status: 404 });
+      await lockStockItems(client, lines.rows);
+      const result = await client.query(
         "SELECT sal.post_delivery_by_no($1) AS result;",
         [deliveryNo]
       );
+      await client.query("COMMIT");
 
       res.json({
         success: true,
@@ -846,12 +905,15 @@ router.post(
         result: result.rows[0]?.result ?? null
       });
     } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
       res.status(500).json({
         success: false,
         message: "Failed to post delivery.",
         error: error.message,
         detail: error.detail || null
       });
+    } finally {
+      client.release();
     }
   }
 );

@@ -4,6 +4,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { getUserRoles, requirePermission } from "../middleware/permissions.js";
 import { setDatabaseUserContext, UUID_PATTERN } from "../utils/uuid.js";
 import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
+import { lockStockItems } from "../services/stockLock.service.js";
 import { queueEfrisCreditNoteForReturn } from "../services/efris.service.js";
 
 const router = express.Router();
@@ -312,6 +313,16 @@ router.post("/:id/post", requireAuth, requirePermission("POST_CUSTOMER_RETURN"),
     if (!current.rowCount) { await client.query("ROLLBACK"); return res.status(404).json({ success: false, message: "Customer return not found." }); }
     if (current.rows[0].status === "POSTED") { await client.query("ROLLBACK"); return res.status(409).json({ success: false, message: "This return has already been posted." }); }
     if (current.rows[0].status === "VOID") { await client.query("ROLLBACK"); return res.status(409).json({ success: false, message: "This return has already been voided." }); }
+    const lockLines = await client.query(
+      `SELECT cr.location_id, crl.product_id
+       FROM sal.customer_return cr
+       JOIN sal.customer_return_line crl ON crl.customer_return_id=cr.customer_return_id
+       WHERE cr.customer_return_id=$1
+       ORDER BY crl.product_id`,
+      [returnId]
+    );
+    if (!lockLines.rowCount) throw new Error("Customer return has no lines.");
+    await lockStockItems(client, lockLines.rows);
     const result = await client.query("SELECT sal.post_customer_return($1::uuid) AS customer_return_id", [returnId]);
     await queueEfrisCreditNoteForReturn(client, returnId, req.user?.user_id || null);
     await client.query("COMMIT");
@@ -332,17 +343,37 @@ router.post("/:id/refund", requireAuth, requirePermission("PROCESS_REFUND"), asy
   finally { client.release(); }
 });
 
-router.post("/:id/void", requireAuth, requirePermission("VOID_CUSTOMER_RETURN"), async (req, res) => {
+export async function voidCustomerReturnHandler(req, res) {
   const client = await pool.connect();
   try {
     if (!String(req.body?.reason || "").trim()) return res.status(400).json({ success: false, message: "A void reason is required." });
     await client.query("BEGIN");
     await setDatabaseUserContext(client, req);
+    const originalLines = await client.query(`
+      SELECT cr.posted_movement_id, sml.product_id,
+             sml.from_location_id, sml.to_location_id
+      FROM sal.customer_return cr
+      JOIN inv.stock_movement_line sml ON sml.movement_id=cr.posted_movement_id
+      WHERE cr.customer_return_id=$1
+      ORDER BY sml.movement_line_id`, [req.params.id]);
+    if (!originalLines.rowCount) {
+      throw new Error("Original customer-return movement was not found or has no movement lines.");
+    }
+    if (originalLines.rows.some((line) => !line.product_id)) {
+      throw new Error("Original customer-return movement contains a line without a product.");
+    }
+    const lockItems = originalLines.rows.flatMap((line) => [
+      line.from_location_id ? { location_id: line.from_location_id, product_id: line.product_id } : null,
+      line.to_location_id ? { location_id: line.to_location_id, product_id: line.product_id } : null
+    ].filter(Boolean));
+    await lockStockItems(client, lockItems);
     const result = await client.query("SELECT sal.void_customer_return($1::uuid,$2::text) AS reversal_journal_id", [req.params.id, String(req.body.reason).trim()]);
     await client.query("COMMIT");
     return res.json({ success: true, reversal_journal_id: result.rows[0].reversal_journal_id, message: "Customer return voided with reversal records." });
   } catch (error) { await client.query("ROLLBACK").catch(() => {}); return res.status(error.statusCode || 400).json({ success: false, message: error.statusCode === 401 ? error.message : "Failed to void customer return." }); }
   finally { client.release(); }
-});
+}
+
+router.post("/:id/void", requireAuth, requirePermission("VOID_CUSTOMER_RETURN"), voidCustomerReturnHandler);
 
 export default router;

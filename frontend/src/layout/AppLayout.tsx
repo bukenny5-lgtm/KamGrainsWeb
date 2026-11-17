@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   Activity,
@@ -12,6 +12,7 @@ import {
   Home,
   Landmark,
   LogOut,
+  Menu,
   PackageCheck,
   Receipt,
   ReceiptText,
@@ -22,6 +23,7 @@ import {
   Truck,
   UserCircle,
   UserCog,
+  X,
   WalletCards,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -311,6 +313,7 @@ export default function AppLayout() {
   const { hasFeature } = useBusinessFeatures();
   const operating = useOperatingContext();
   const location = useLocation();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const visibleNavItems = navItems.filter((item) => hasRole(item.roles) && (!item.feature || hasFeature(item.feature)));
   const pageTitle = getPageTitle(location.pathname);
@@ -329,8 +332,16 @@ export default function AppLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-950">
-      <aside className="fixed left-0 top-0 z-40 flex h-screen w-72 flex-col border-r border-slate-200 bg-white">
+    <div className="min-h-screen overflow-x-hidden bg-slate-100 text-slate-950">
+      {mobileNavOpen && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          className="fixed inset-0 z-40 bg-slate-950/40 md:hidden"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
+      <aside className={`fixed left-0 top-0 z-50 flex h-[100dvh] w-72 max-w-[calc(100vw-2rem)] flex-col border-r border-slate-200 bg-white transition-transform duration-200 lg:translate-x-0 ${mobileNavOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="flex h-20 shrink-0 items-center border-b px-6">
           <div>
             <h1 className="text-xl font-bold tracking-tight text-slate-900">
@@ -351,6 +362,7 @@ export default function AppLayout() {
                 key={item.path}
                 to={item.path}
                 end={item.path === "/"}
+                onClick={() => setMobileNavOpen(false)}
                 className={({ isActive }) =>
                   [
                     "flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition",
@@ -374,21 +386,32 @@ export default function AppLayout() {
         </div>
       </aside>
 
-      <main className="ml-72 min-h-screen">
-        <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b border-slate-200 bg-white/90 px-8 backdrop-blur">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">
+      <main className="min-h-screen lg:ml-72">
+        <header className="sticky top-0 z-30 flex min-h-20 items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur sm:px-6 md:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <Button
+              variant="outline"
+              size="icon"
+              className="shrink-0 lg:hidden"
+              aria-label={mobileNavOpen ? "Close navigation" : "Open navigation"}
+              onClick={() => setMobileNavOpen((open) => !open)}
+            >
+              {mobileNavOpen ? <X /> : <Menu />}
+            </Button>
+            <div className="min-w-0">
+            <h2 className="truncate text-lg font-semibold text-slate-900">
               {pageTitle}
             </h2>
-            <p className="text-sm text-slate-500">{pageSubtitle.replaceAll("KAM GRAINS SUPPLIES", businessProfile.company_name)}</p>
+            <p className="hidden max-w-2xl truncate text-sm text-slate-500 sm:block">{pageSubtitle.replaceAll("KAM GRAINS SUPPLIES", businessProfile.company_name)}</p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             {hasFeature("MULTI_LOCATION") && operating.currentBranch && <div className="hidden items-center gap-2 lg:flex">
               {operating.authorizedBranches.length>1?<label className="flex items-center gap-2 text-xs font-medium text-slate-600">Branch<select className="max-w-40 rounded-lg border bg-white px-2 py-2 text-sm text-slate-900" value={operating.currentBranch.branch_id} onChange={event=>operating.changeBranch(event.target.value)}>{operating.authorizedBranches.map(branch=><option key={branch.branch_id} value={branch.branch_id}>{branch.branch_name}</option>)}</select></label>:<span className="rounded-lg border bg-slate-50 px-3 py-2 text-sm">Branch: <strong>{operating.currentBranch.branch_name}</strong></span>}
               {operating.authorizedLocations.length>1?<label className="flex items-center gap-2 text-xs font-medium text-slate-600">Location<select className="max-w-48 rounded-lg border bg-white px-2 py-2 text-sm text-slate-900" value={operating.currentLocation?.location_id||""} onChange={event=>operating.changeLocation(event.target.value)}>{operating.authorizedLocations.map(location=><option key={location.location_id} value={location.location_id}>{location.location_name}</option>)}</select></label>:operating.currentLocation&&<span className="rounded-lg border bg-slate-50 px-3 py-2 text-sm">Location: <strong>{operating.currentLocation.location_name}</strong></span>}
             </div>}
-            <div className="hidden rounded-2xl border bg-slate-50 px-4 py-2 md:block">
+            <div className="hidden rounded-2xl border bg-slate-50 px-4 py-2 lg:block">
               <div className="flex items-center gap-2">
                 <UserCircle className="h-5 w-5 text-slate-500" />
 
@@ -406,12 +429,12 @@ export default function AppLayout() {
 
             <Button variant="outline" onClick={handleLogout} className="gap-2">
               <LogOut className="h-4 w-4" />
-              Logout
+              <span className="hidden sm:inline">Logout</span>
             </Button>
           </div>
         </header>
 
-        <section className="p-8">
+        <section className="min-w-0 p-4 sm:p-6 md:p-8">
           {operating.currentBranch && !operating.currentLocation && (
             <div role="alert" className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               No authorized operating location is configured for this branch. An administrator can assign or configure a location in Setup.

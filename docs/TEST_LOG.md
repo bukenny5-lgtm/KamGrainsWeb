@@ -1,5 +1,12 @@
 # Test and Regression Log
 
+## 2026-11-17 — Phase 62/63 production and staging evidence record
+
+- Production POS smoke test `POS-20261117-000081`: **PASS**.
+- Normal-sales smoke test after Phase 63B ACL hardening: **PASS**.
+- Staging concurrency evidence, POS reservation matrix, advisory-lock behavior, loser revalidation, atomic rejection, and unscoped bypass denial are summarized in [PHASE_62_63_PRODUCTION_DEPLOYMENT.md](PHASE_62_63_PRODUCTION_DEPLOYMENT.md).
+- This entry records completed evidence only; no production transaction was executed during this documentation task.
+
 ## 2026-09-25 — Phase 8C cash refund/session and date display correction
 
 | Check | Result | Evidence |
@@ -1221,3 +1228,60 @@ Live scope acceptance used local `kam_grains_db` and request `ISR-20261025-00001
 | Authorized destination-branch receiving locations | PASS | Endpoint restricts options to active stock-holding locations with active user grants. |
 | Alternate authorized location capability | PASS-CODE | Capability counts valid authorized receiving locations rather than requiring the preferred location. |
 | UI selector and payload | PASS-CODE | Receive Into Location selector submits `receiving_location_id` to the canonical receive endpoint. |
+
+## Narrow inventory allocation integrity fix — 2026-11-12
+
+| Check | Result | Evidence |
+|---|---|---|
+| Focused allocation and regression suite | PASS | 42 tests passed: reservation-aware real-handler allocation, Phase 9C/9D stock-request regressions, POS location/reversal regressions, and shared stock-lock tests. |
+| Route/test syntax | PASS | `node --check src/routes/internalStockRequests.routes.js` and focused test syntax check passed. |
+| Backend check | PASS | `npm.cmd run check` passed (`node --check src/server.js`). |
+| Diff whitespace | PASS | `git diff --check` passed; only line-ending normalization warnings were reported for existing working-tree files. |
+| Live/database validation | NOT RUN | Intentionally excluded; this narrow task makes no database or deployment changes. |
+
+## Normal delivery reservation safety — 2026-11-12
+
+| Check | Result | Evidence |
+|---|---|---|
+| Real-handler reservation scenarios | PASS | 10 focused tests covering unreserved, partial/full reservation, selected lot, other lot/location, and non-reserving statuses. |
+| Backend syntax/check | PASS | Delivery route syntax and `npm run check` passed. |
+| Staging identity/catalog verification | PASS | Connected as `kam_grains_staging_dev` to `kam_grains_staging`; function/view definitions verified with catalog functions. |
+| Direct SQL and wrapper | PASS | `sal.post_delivery` and `sal.post_delivery_by_no` succeeded only with sufficient available stock; reservation conflict was rejected. |
+| Atomicity | PASS | Failed post left no movement and no posted delivery fields; all controlled fixture changes rolled back. |
+| Concurrency | PASS | Delivery-vs-transfer, delivery-vs-POS, and delivery-vs-delivery shared-lock probes all serialized on the same namespace. |
+| Production database | NOT RUN | `kam_grains_db` was not accessed. |
+
+## Phase 62 staging reconciliation — 2026-11-12
+
+| Check | Result | Evidence |
+|---|---|---|
+| Staging application-role login | PASS | `kam_grains_staging` / `kam_grains_staging_app` verified. |
+| Guarded POS posting | PASS | Real `sal.post_pos_sale(uuid)` execution succeeded through the application role. |
+| Unscoped bypass | PASS | `sal.post_pos_sale_unscoped(uuid)` denied to the application role. |
+| POS rollback/atomicity | PASS | Rolled-back posting left no committed movement for the fixture. |
+| Reservation revalidation | PASS | Fully reserved stock rejected; non-reserving transfer status allowed posting. |
+| Delivery concurrency | PARTIAL | Existing shared-lock probes and delivery staging suite passed; committed end-to-end delivery/transfer/POS races remain pending. |
+| Cleanup | PASS | `PH62-*` fixture count verified as zero. |
+
+## Phase 62 POS reservation matrix — 2026-11-12
+
+| Check | Result | Evidence |
+|---|---|---|
+| Partial reservation | PASS | Requested quantity below remaining available quantity posted through the application role. |
+| Exact available quantity | PASS | Requested quantity equaled `qty_on_hand - reserved_qty` and posted. |
+| Fully reserved | PASS | Rejected with insufficient stock. |
+| Raw on-hand sufficient / available insufficient | PASS | Rejected after reservation-aware validation. |
+| Reservation on another lot | PASS | Selected lot remained available and posted. |
+| Reservation at another location | PASS | Other-location reservation did not reduce selected-location availability. |
+| Rejected-case state inspection | PASS | No movement, movement line, journal, journal line, AR, or POS posting state was introduced before cleanup. |
+| End-to-end delivery races | NOT RUN | Controlled committed delivery fixtures remain outstanding; lock probes are not treated as equivalent. |
+
+## Phase 62/63 real delivery races — 2026-11-12
+
+| Check | Result | Evidence |
+|---|---|---|
+| Delivery vs delivery | PASS | Session B observed waiting on `wait_event_type=Lock`, `wait_event=advisory`; after A committed, B failed fresh availability validation; one delivery posted. |
+| Delivery vs POS | PASS | Actual delivery and guarded POS sessions serialized; POS loser failed fresh availability validation; no oversell or loser posting state. |
+| Delivery vs stock-transfer dispatch | NOT RUN | The approved direct DB roles cannot invoke the authenticated application dispatch route; no synthetic SQL substitute was counted. |
+| Multi-product runtime ordering | NOT RUN | Source ordering passed, but a three-path runtime multi-product race was not completed. |
+| Fixture cleanup | PASS | `PH62RACE-*` and `PH63RACE-*` delivery/sale counts verified as zero. |

@@ -729,3 +729,39 @@ Investigation of `ISR-20261025-000019` found the allocation persisted correctly 
 ## Phase 9E-D2 resolved issue — preferred location incorrectly constrained receipt UX
 
 - The receiving UI had no recipient location selector and capability was tied to the old intended location. Valid authorized locations are now listed from the destination branch, and the selected location is posted as `receiving_location_id`.
+
+## Narrow inventory allocation integrity issue — resolved 2026-11-12
+
+- Symptom: Internal Stock Request fulfilment could prepare a transfer line using a lot's raw `qty_on_hand` even when part of that lot was already reserved by another draft transfer.
+- Root cause: the route calculated reservation-aware `available_qty` for validation but used raw `qty_on_hand` for the per-lot `Math.min` allocation.
+- Risk: linked transfer preparation could over-allocate physically available stock and overlap an existing reservation.
+- Resolution: per-lot allocation now clamps to the same locked `available_qty` used by the aggregate check; invalid negative/non-numeric availability fails safely before mutation.
+- Verification: seven real-handler allocation tests plus the full 42-test focused regression suite pass; backend syntax/check and `git diff --check` pass.
+- Scope: no POS, customer-return, normal-delivery, SQL migration, database, deployment, or service changes were made.
+
+## Normal delivery reservation safety issue — addressed in staging 2026-11-12
+
+- Symptom: normal delivery selection and posting could use physical `qty_on_hand` without subtracting active transfer reservations.
+- Root cause: the deployed delivery view/function lacked the reservation-aware guard used by POS and transfer fulfilment.
+- Resolution: Phase 63 adds the established DRAFT/partial-dispatch formula, shared deterministic locks, route checks, and final database validation before mutation.
+- Verification: staging direct SQL, wrapper, accounting-preservation, rollback, and three shared-lock concurrency probes passed.
+- Production status: `kam_grains_db` was not accessed or modified; production migration and ACL/owner hardening remain pending.
+
+## Phase 62 staging prerequisite and validation gap — 2026-11-12
+
+- Initial blocker: the staging application role lacked a usable local credential for direct application-role testing.
+- Resolution: staging authentication was configured; real guarded POS and bypass tests now pass.
+- Additional least-privilege dependencies discovered through audit/branch triggers were granted only to `kam_grains_pos_fn_owner` in staging.
+- Remaining evidence gap: committed end-to-end races across delivery, stock transfer, and POS business paths have not yet been completed.
+- Production status: `kam_grains_db` was not accessed or modified.
+
+## Phase 62 final POS matrix — 2026-11-12
+
+- POS reservation matrix completed successfully in `kam_grains_staging` using `kam_grains_staging_app`.
+- No implementation defect was discovered.
+- Delivery-vs-delivery, delivery-vs-transfer, and delivery-vs-POS committed races remain outstanding and are not represented by lock probes alone.
+
+## Phase 62/63 real race evidence — 2026-11-12
+
+- Delivery-vs-delivery and delivery-vs-POS committed races passed with observed advisory-lock waits and safe loser failure.
+- Delivery-vs-transfer dispatch could not be executed through the authenticated application route using only the approved direct database roles, so it remains an evidence gap rather than a claimed pass.

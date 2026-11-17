@@ -1,5 +1,13 @@
 # Deployment Log
 
+## Phase 62/63 Production Deployment — 2026-11-17
+
+| Deployment ID | Date | Environment | Git Commit | Frontend Build | Backend Build | Database Migration | Services Restarted | Deployment Paths | Smoke Test | Rollback Plan | Result |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| P62-63-PROD | 2026-11-17 | Production `kam_grains_db` | Not recorded in supplied evidence | Existing deployed artifact | Existing deployed artifact | Phase 62, 62B–62E, 63, and 63B rollout | `KamGrainsAPI` was stopped during the database migration window; service details below | Backend `C:\BusinessSystems\KamGrainsWeb\backend`; frontend `C:\BusinessSystems\KamGrainsDeploy\frontend\dist` | POS `POS-20261117-000081`: PASS; normal sales after ACL hardening: PASS | Restore the verified pre-rollout custom-format backup and prior deployed artifacts through the approved operational rollback procedure | COMPLETE |
+
+See [PHASE_62_63_PRODUCTION_DEPLOYMENT.md](PHASE_62_63_PRODUCTION_DEPLOYMENT.md) for the full evidence record. The pre-rollout backup was `C:\BusinessSystems\KamGrainsBackups\kam_grains_db-pre-phase62-63-20261114-073942.backup`; PostgreSQL custom-format and `pg_restore` list verification succeeded.
+
 ## Deployment Record Fields
 Each deployment record should include:
 - Deployment ID

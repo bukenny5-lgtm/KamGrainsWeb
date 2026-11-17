@@ -127,4 +127,23 @@
   html {
     @apply font-sans;
     }
+  body {
+    overflow-x: hidden;
+  }
+  input, select, textarea {
+    max-width: 100%;
+  }
+}
+
+@media (pointer: coarse) {
+  button, [role="button"], input, select, textarea {
+    min-height: 2.75rem;
+  }
+}
+
+@layer utilities {
+  [role="dialog"] > [data-slot="card"] {
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+  }
 }

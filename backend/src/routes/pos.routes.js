@@ -8,6 +8,7 @@ import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess
 import { calculateDocumentTotals, calculateTaxLine } from "../services/tax.service.js";
 import { queueEfrisPosSale } from "../services/efris.service.js";
 import { assertCustomerVisible } from "../services/customerScope.service.js";
+import { lockStockItems } from "../services/stockLock.service.js";
 
 const router = express.Router();
 router.use(requireAuth,requireLocationAccessWhenSpecified);
@@ -277,17 +278,42 @@ router.get(
               'lot_id', lots.lot_id,
               'lot_code', lots.lot_code,
               'expiry_date', lots.expiry_date,
-              'qty_on_hand', lots.qty_on_hand
+              'lot_status', lots.lot_status,
+              'qty_on_hand', lots.qty_on_hand,
+              'available_qty', lots.available_qty
             ) ORDER BY lots.expiry_date NULLS LAST, lots.lot_code)
-            FROM (
-              SELECT soh.lot_id, l.lot_code, l.expiry_date, SUM(soh.qty_on_hand) AS qty_on_hand
-              FROM inv.v_stock_on_hand_active soh
-              JOIN inv.lot l ON l.lot_id = soh.lot_id
-              WHERE soh.product_id = p.product_id
-                AND soh.location_id = $1
-                AND soh.qty_on_hand > 0
-              GROUP BY soh.lot_id, l.lot_code, l.expiry_date
-            ) lots
+          FROM (
+              SELECT soh.lot_id, l.lot_code, l.expiry_date, l.lot_status,
+                SUM(soh.qty_on_hand) AS qty_on_hand,
+                SUM(soh.qty_on_hand) - COALESCE(SUM(reserved.reserved_qty), 0) AS available_qty
+               FROM inv.v_stock_on_hand_active soh
+               JOIN inv.lot l ON l.lot_id = soh.lot_id
+               LEFT JOIN LATERAL (
+                 SELECT COALESCE(SUM(CASE
+                   WHEN t.status = 'DRAFT' THEN tl.qty
+                   WHEN t.status = 'PARTIALLY_DISPATCHED' THEN tl.qty - COALESCE(dispatched.dispatched_qty, 0)
+                   ELSE 0
+                 END), 0) AS reserved_qty
+                 FROM inv.stock_transfer t
+                 JOIN inv.stock_transfer_line tl ON tl.stock_transfer_id = t.stock_transfer_id
+                 LEFT JOIN LATERAL (
+                   SELECT SUM(dl.qty) AS dispatched_qty
+                   FROM inv.stock_transfer_dispatch_line dl
+                   JOIN inv.stock_transfer_dispatch d ON d.dispatch_id = dl.dispatch_id
+                   WHERE dl.stock_transfer_line_id = tl.stock_transfer_line_id
+                     AND d.status = 'DISPATCHED'
+                 ) dispatched ON true
+                 WHERE t.source_location_id = soh.location_id
+                   AND t.status IN ('DRAFT', 'PARTIALLY_DISPATCHED')
+                   AND tl.product_id = soh.product_id
+                   AND tl.lot_id IS NOT DISTINCT FROM soh.lot_id
+               ) reserved ON true
+               WHERE soh.product_id = p.product_id
+                 AND soh.location_id = $1
+                 AND soh.qty_on_hand > 0
+               GROUP BY soh.lot_id, l.lot_code, l.expiry_date, l.lot_status
+               HAVING SUM(soh.qty_on_hand) - COALESCE(SUM(reserved.reserved_qty), 0) > 0
+             ) lots
           ), '[]'::json) AS lots
         FROM inv.product p
         CROSS JOIN (SELECT pos_pricing_mode FROM app.company_profile WHERE is_active = true ORDER BY created_at, company_id LIMIT 1) cp
@@ -451,6 +477,10 @@ router.post(
         const sessionResult = await client.query(`
           SELECT s.session_id, s.till_id, s.branch_id, s.location_id, s.session_no
           FROM app.cashier_session s
+          JOIN app.till t ON t.till_id=s.till_id
+            AND t.company_id=s.company_id AND t.branch_id=s.branch_id AND t.location_id=s.location_id
+            AND t.is_active
+          JOIN sec.user_till ut ON ut.till_id=s.till_id AND ut.user_id=s.cashier_user_id AND ut.is_active
           WHERE s.company_id=$1 AND s.cashier_user_id=$2 AND s.branch_id=$3 AND s.location_id=$4
             AND s.status='OPEN'
           ORDER BY s.opened_at DESC LIMIT 1`, [companyId, req.user?.user_id, req.branchId, locationId]);
@@ -679,13 +709,80 @@ router.get("/sales/:saleId", requireAuth, requirePosFeature, requirePermission("
   }
 });
 
-router.post("/sales/:saleId/void", requireAuth, requirePosFeature, requirePermission("VOID_POS_SALE"), async (req, res) => {
+export async function voidPosSaleHandler(req, res) {
   const client = await pool.connect();
   try {
     const reason = String(req.body?.reason || "").trim();
     if (!reason) return res.status(400).json({ success: false, message: "A void reason is required." });
     await client.query("BEGIN");
     await setDatabaseUserContext(client, req);
+    const originalLines = await client.query(`
+      SELECT ps.sale_no, ps.location_id, ps.posted_movement_id, sm.movement_id,
+             sm.movement_type, sm.document_no,
+             sml.product_id, sml.lot_id, sml.qty,
+             sml.from_location_id, sml.to_location_id
+      FROM sal.pos_sale ps
+      LEFT JOIN inv.stock_movement sm
+        ON sm.movement_id = COALESCE(
+          ps.posted_movement_id,
+          (SELECT sm.movement_id
+           FROM inv.stock_movement sm
+           WHERE sm.movement_type='SALE_ISSUE'
+             AND sm.document_no=(SELECT sale_no FROM sal.pos_sale WHERE pos_sale_id=$1)
+           ORDER BY sm.created_at, sm.movement_id
+           LIMIT 1)
+        )
+      LEFT JOIN inv.stock_movement_line sml
+        ON sml.movement_id = sm.movement_id
+      WHERE ps.pos_sale_id=$1
+      ORDER BY sml.movement_line_id`, [req.params.saleId]);
+    if (!originalLines.rowCount || !originalLines.rows[0].movement_id) {
+      throw new Error("Original POS SALE_ISSUE movement was not found or has no movement lines.");
+    }
+    const movement = originalLines.rows[0];
+    if (movement.movement_type !== "SALE_ISSUE" || movement.document_no !== movement.sale_no) {
+      throw new Error("Original POS movement reference is inconsistent with the sale.");
+    }
+    const expectedStockLines = await client.query(
+      `SELECT psl.product_id, psl.lot_id, psl.qty
+       FROM sal.pos_sale_line psl
+       JOIN inv.product p ON p.product_id=psl.product_id
+       WHERE psl.pos_sale_id=$1 AND psl.qty>0 AND p.is_stock_item
+       ORDER BY psl.product_id, psl.lot_id, psl.pos_sale_line_id`,
+      [req.params.saleId]
+    );
+
+    const scaleQuantity = (value) => {
+      const text = String(value ?? "").trim();
+      if (!/^\d+(?:\.\d+)?$/.test(text)) throw new Error("POS stock quantities must be valid non-negative numerics.");
+      const [whole, fraction = ""] = text.split(".");
+      if (fraction.length > 3) throw new Error("POS stock quantities exceed the supported 3-decimal precision.");
+      return BigInt(whole) * 1000n + BigInt((fraction + "000").slice(0, 3));
+    };
+    const stockKey = (productId, lotId) => `${String(productId).toLowerCase()}:${lotId ? String(lotId).toLowerCase() : "<null>"}`;
+    const aggregate = (lines, quantityField) => {
+      const result = new Map();
+      for (const line of lines) {
+        if (!line.product_id) throw new Error("POS stock movement contains an invalid product identifier.");
+        const key = stockKey(line.product_id, line.lot_id);
+        result.set(key, (result.get(key) || 0n) + scaleQuantity(line[quantityField]));
+      }
+      return result;
+    };
+
+    if (originalLines.rows.some((line) => !line.product_id || line.from_location_id !== originalLines.rows[0].location_id || line.to_location_id !== null)) {
+      throw new Error("Original POS movement contains a line with invalid stock location endpoints.");
+    }
+    const expected = aggregate(expectedStockLines.rows, "qty");
+    const actual = aggregate(originalLines.rows, "qty");
+    if (!expected.size || expected.size !== actual.size || [...expected].some(([key, quantity]) => actual.get(key) !== quantity)) {
+      throw new Error("Original POS movement does not exactly cover the persisted stock-bearing sale lines.");
+    }
+    const lockItems = originalLines.rows.flatMap((line) => [
+      line.from_location_id ? { location_id: line.from_location_id, product_id: line.product_id } : null,
+      line.to_location_id ? { location_id: line.to_location_id, product_id: line.product_id } : null
+    ].filter(Boolean));
+    await lockStockItems(client, lockItems);
     await client.query("SELECT sal.void_pos_sale($1::uuid, $2::text);", [req.params.saleId, reason]);
     await client.query("COMMIT");
     const sale = await loadSaleById(req.params.saleId);
@@ -696,6 +793,8 @@ router.post("/sales/:saleId/void", requireAuth, requirePosFeature, requirePermis
   } finally {
     client.release();
   }
-});
+}
+
+router.post("/sales/:saleId/void", requireAuth, requirePosFeature, requirePermission("VOID_POS_SALE"), voidPosSaleHandler);
 
 export default router;

@@ -1,5 +1,13 @@
 # Current Status
 
+## 2026-11-17 — Phase 62/63 production status
+
+The Phase 62 POS stock-concurrency deployment and Phase 63 normal-delivery reservation-safety deployment are **COMPLETE** in production. POS production smoke test `POS-20261117-000081` is **PASS**, and the normal-sales production smoke test after security hardening is **PASS**. Shared location/product stock locking and reservation-aware validation are **ACTIVE**.
+
+Production runtime uses `kam_grains_app`; protected POS posting is owned by `kam_grains_pos_fn_owner`. The fixed-IP networking dependency is **REMOVED**. The complete deployment, backup, role, privilege, service, networking, and staging-evidence record is [PHASE_62_63_PRODUCTION_DEPLOYMENT.md](PHASE_62_63_PRODUCTION_DEPLOYMENT.md).
+
+Remaining non-blocking risk: unrelated ERP functions outside the audited POS and normal-sales chains may still have `PUBLIC` EXECUTE privileges and can be audited separately as future security hardening.
+
 ## Phase 9C-B — reservation model
 
 Implemented locally: active draft reservations, available-to-allocate validation, inventory On Hand/Reserved/Available/In Transit fields, reservation drill-down, structured fulfilment conflicts, and lot-aware reservation checks. Phase 9D dispatch remains untouched; production is untouched and no commit/push/deployment was made.
@@ -421,3 +429,19 @@ Dispatch detail now combines business detail with an authoritative destination r
 ## Phase 9E-D2 status — recipient location selection
 
 Destination branch remains fixed before dispatch. Preferred receiving location is guidance only. The authorized recipient now receives a destination-branch-scoped list of active stock-holding locations, selects Receive Into Location, and posts the selection as `receiving_location_id`; TRR and movement dimensions use that actual location.
+
+## Narrow inventory allocation integrity fix — 2026-11-12
+
+Internal Stock Request fulfilment no longer consumes reserved stock when preparing a linked transfer: allocation uses the locked reservation-aware availability calculation. The implementation and focused regression suite are complete locally. Existing POS Phase B work remains present and was not modified by this task. Normal delivery posting remains an audit-only unresolved boundary because its authoritative `sal.post_delivery_by_no` SQL source is absent from the repository.
+
+## Normal delivery reservation safety — 2026-11-12
+
+Phase 63 is implemented and validated in isolated `kam_grains_staging`. Delivery lot options and selected-lot checks subtract active source reservations, and `sal.post_delivery(uuid)` locks and revalidates exact location/product/lot availability before movement or journal creation. Direct SQL, wrapper, rollback, and shared-lock tests passed. Production `kam_grains_db` remains untouched; production migration and ACL/owner hardening remain pending separate approval.
+
+## Phase 62 staging reconciliation — 2026-11-12
+
+Phase 62 is now applied in isolated staging and the intended application-role security boundary is verified. Real application-role POS posting, legacy bypass denial, reservation rejection, non-reserving-status behavior, rollback atomicity, and fixture cleanup passed. Final status remains CONDITIONAL pending committed end-to-end delivery-vs-delivery, delivery-vs-transfer, and delivery-vs-POS races using actual business paths. Production remains untouched.
+
+The full POS reservation matrix subsequently passed in staging: partial and exact availability, fully reserved and raw-on-hand/available rejection, other-lot, and other-location cases. Rejected-case catalog counts were inspected before cleanup. The remaining production-readiness gap is the committed multi-session delivery race evidence.
+
+Real delivery-vs-delivery and delivery-vs-POS races now pass with observed advisory-lock blocking and loser revalidation. Delivery-vs-stock-transfer dispatch and runtime three-path multi-product ordering remain outstanding; production readiness therefore remains NOT READY.

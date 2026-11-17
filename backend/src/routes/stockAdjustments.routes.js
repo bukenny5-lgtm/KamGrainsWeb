@@ -3,6 +3,7 @@ import { pool, query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { getUserRoles, requirePermission } from "../middleware/permissions.js";
 import { requireLocationAccessWhenSpecified } from "../middleware/locationAccess.js";
+import { lockStockItems } from "../services/stockLock.service.js";
 
 const router = express.Router();
 router.use(requireAuth, requireLocationAccessWhenSpecified);
@@ -583,6 +584,17 @@ router.post(
       if (adjustment.status !== "DRAFT") {
         throw makeHttpError(409, "Only DRAFT stock adjustments can be posted.");
       }
+
+      const lockLines = await client.query(
+        `SELECT da.from_location_id AS location_id, dal.product_id
+         FROM inv.damage_adjustment da
+         JOIN inv.damage_adjustment_line dal ON dal.damage_adjustment_id=da.damage_adjustment_id
+         WHERE da.damage_adjustment_id=$1
+         ORDER BY dal.product_id`,
+        [adjustment.damage_adjustment_id]
+      );
+      if (!lockLines.rowCount) throw makeHttpError(409, "Stock adjustment has no lines.");
+      await lockStockItems(client, lockLines.rows);
 
       const postResult = await client.query(
         `
